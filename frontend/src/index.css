@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ensure Leaflet map fills its container */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #0f172a;
+}
+
+/* Pulsing animation for severity 5 (emergency) markers */
+@keyframes pulse-emergency {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.marker-emergency {
+  animation: pulse-emergency 1s ease-in-out infinite;
+}
+
+/* Bottom drawer transition on mobile */
+.panel-drawer {
+  transition: transform 0.3s ease-in-out;
+}
