@@ -16,12 +16,12 @@ from seed.gauge_stations import GAUGE_STATIONS
 
 logger = logging.getLogger(__name__)
 
-# From CLAUDE.md confidence scoring table
+# 0.95: calibrated government instrument. Not 1.0 because equipment can malfunction.
 _CWC_BASE_CONFIDENCE = 0.95
 
-# From CLAUDE.md freshness half-life table — gauge reading half-life is 30 min.
-# expires_at is set to 2× half-life (60 min), matching the stale threshold.
+# CWC gauges report every 15 min. After 30 min with no update = 2 missed reports.
 _GAUGE_HALF_LIFE_MIN = 30
+# expires_at = 2× half-life = STALE_THRESHOLD. After this, the reading is unreliable.
 _GAUGE_EXPIRES_AFTER_MIN = _GAUGE_HALF_LIFE_MIN * 2
 
 

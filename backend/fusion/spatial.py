@@ -15,8 +15,13 @@ from fusion.confidence import compute_fused_confidence
 
 logger = logging.getLogger(__name__)
 
-CONFLICT_RADIUS_KM = 10.0   # cluster reports within this radius
-CONFLICT_TIME_WINDOW_HR = 1  # and within this time window
+# 10km: floods are localised — beyond this, reports could be about different events.
+# Why not PostGIS ST_DWithin? Conflict detection runs in Python on already-fetched data.
+# N² DB calls would be slower than haversine in Python for <1000 reports.
+CONFLICT_RADIUS_KM = 10.0
+
+# 1 hour: a tweet from 5h ago shouldn't contradict a fresh gauge reading.
+CONFLICT_TIME_WINDOW_HR = 1
 
 
 class ConflictType(str, Enum):
@@ -39,8 +44,10 @@ class Conflict:
 
 
 def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """Great-circle distance in km between two lat/lng points."""
-    R = 6371
+    """Great-circle distance in km. Uses haversine (not Euclidean) because at
+    latitude 20° (Odisha), 1° longitude ≠ 1° latitude in km. Euclidean in
+    lat/lng space gives ~2% error at 10km, worse at larger distances."""
+    R = 6371  # Earth's mean radius in km
     dlat = math.radians(lat2 - lat1)
     dlng = math.radians(lng2 - lng1)
     a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
@@ -151,7 +158,7 @@ def detect_conflicts(gauge_reports: list[dict], social_reports: list[dict]) -> l
             nearby_social.append(r)
 
         if len(nearby_social) < 3:
-            continue  # need at least 3 corroborating reports to flag a conflict
+            continue  # 1 tweet isn't reliable. 3 = corroboration. Avoids false alerts from spam.
 
         avg_severity = sum(r.get("severity", 1) for r in nearby_social) / len(nearby_social)
 

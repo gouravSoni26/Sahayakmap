@@ -14,10 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 # Staleness threshold: freshness_factor below this = stale.
-# 0.25 ≈ past 2 half-lives. Shared constant so engine.py and is_stale() agree.
+# 0.25 = 2 half-lives elapsed = data has lost 75% of decision value.
+# Why 0.25? A commander should not trust data that's missed 2+ update cycles.
 STALE_THRESHOLD = 0.25
 
-# Minimum opacity for stale data on the map — never fully invisible.
+# Never make data invisible — even stale data is better than no data in a disaster.
+# The commander should see it exists but know it's old (via reduced opacity).
 MIN_OPACITY = 0.2
 
 
@@ -32,16 +34,19 @@ class DataType(str, Enum):
     ASSET_TRACKER = "ASSET_TRACKER"
 
 
-# Half-life in minutes for each data type (matches MASTERPLAN.md table)
+# Half-life in minutes for each data type.
+# Why these values? Each is ~2× the expected update interval for that source.
+# After 1 half-life with no update, something is probably wrong.
+# After 2 half-lives (STALE_THRESHOLD), data is unreliable for decisions.
 HALF_LIFE_MINUTES: dict[DataType, float] = {
-    DataType.RIVER_GAUGE: 30,
-    DataType.WEATHER_SHORT: 60,
-    DataType.WEATHER_LONG: 180,
-    DataType.SOCIAL_MEDIA: 120,
-    DataType.SATELLITE: 360,
-    DataType.ROAD_STATUS: 240,
-    DataType.DISTRICT_REPORT: 180,
-    DataType.ASSET_TRACKER: 15,
+    DataType.RIVER_GAUGE: 30,       # CWC updates every 15 min → 30 min = 2 missed
+    DataType.WEATHER_SHORT: 60,     # hourly forecasts → stale after 1h
+    DataType.WEATHER_LONG: 180,     # 12-24h forecasts drift slowly → 3h is fine
+    DataType.SOCIAL_MEDIA: 120,     # tweets go stale fast but 2h covers reporting lag
+    DataType.SATELLITE: 360,        # satellite passes are 6-12h apart
+    DataType.ROAD_STATUS: 240,      # road conditions change slowly unless active flooding
+    DataType.DISTRICT_REPORT: 180,  # district offices report every 2-4h
+    DataType.ASSET_TRACKER: 15,     # GPS pings every 5-10 min → 15 min = 2 missed
 }
 
 # Map from source_type string (DB/API) → DataType.
@@ -99,6 +104,9 @@ def freshness_factor(
     if age_minutes <= 0:
         return 1.0
 
+    # Exponential decay: value drops by half every half_life_minutes.
+    # Why exponential (not linear)? Data is nearly as good at 5 min as at 0 min,
+    # but drastically less useful after 2 half-lives. Linear would overpenalize fresh data.
     return math.pow(0.5, age_minutes / half_life_minutes)
 
 

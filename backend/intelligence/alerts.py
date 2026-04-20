@@ -13,9 +13,15 @@ from fusion.spatial import haversine_km
 
 logger = logging.getLogger(__name__)
 
-# Thresholds
+# Districts report every 2-4h. 4h silence = at least one missed report.
+# During floods, silence often means communication failure — extremely dangerous.
 SILENT_DISTRICT_HOURS = 4
+
+# A flood 15km away can reach a camp in 1-4h depending on terrain.
+# Gives enough lead time to start evacuation prep.
 CAMP_RISK_PROXIMITY_KM = 15
+
+# Need 3+ reports to confirm bridge submersion — avoids false alerts from single tweet.
 BRIDGE_CORROBORATION_COUNT = 3
 
 

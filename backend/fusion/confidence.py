@@ -9,22 +9,27 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Base confidence by source type (0.0 – 1.0)
+# Base confidence by source type (0.0 – 1.0).
+# Higher = more trustworthy by default. 0.95 not 1.0 because equipment can malfunction.
+# Social media starts at 0.30 (unverified) and gets boosted by corroboration.
 BASE_CONFIDENCE: dict[str, float] = {
-    "CWC_GAUGE": 0.95,
-    "IMD_WEATHER": 0.75,
-    "SATELLITE": 0.90,
-    "DISTRICT_REPORT": 0.80,
-    "SOCIAL_MEDIA": 0.30,
-    "OSM_ROAD": 0.70,
-    "ASSET_TRACKER": 0.85,
+    "CWC_GAUGE": 0.95,        # calibrated government instruments
+    "IMD_WEATHER": 0.75,      # forecast accuracy degrades with horizon
+    "SATELLITE": 0.90,        # high spatial accuracy but potentially stale
+    "DISTRICT_REPORT": 0.80,  # official but manually compiled = delayed
+    "SOCIAL_MEDIA": 0.30,     # single unverified citizen report
+    "OSM_ROAD": 0.70,         # community-maintained, occasionally outdated
+    "ASSET_TRACKER": 0.85,    # GPS hardware, reliable but can lose signal
 }
 
-# Corroboration boosts — only applied to SOCIAL_MEDIA reports
-CORROBORATION_BOOST_2_SOURCES = 0.15   # exactly 2 independent sources agree
-CORROBORATION_BOOST_3_PLUS_SOURCES = 0.25  # 3 or more independent sources agree
-OFFICIAL_PLUS_SOCIAL_BOOST = 0.20
-PHOTO_BOOST = 0.20  # social media report with image
+# Corroboration boosts — only applied to SOCIAL_MEDIA reports.
+# Why only social? Authoritative sources (gauges, satellite) don't need citizen
+# corroboration. But a lone tweet is unreliable — multiple independent reports
+# from the same area dramatically increase confidence.
+CORROBORATION_BOOST_2_SOURCES = 0.15        # 2 people saying same thing = probably real
+CORROBORATION_BOOST_3_PLUS_SOURCES = 0.25   # 3+ = very likely real
+OFFICIAL_PLUS_SOCIAL_BOOST = 0.20           # gauge confirms what citizens report = strong
+PHOTO_BOOST = 0.20  # image evidence harder to fake than text (but could be old/reposted)
 
 # Source types considered "official" for corroboration purposes
 OFFICIAL_SOURCE_TYPES = {"CWC_GAUGE", "DISTRICT_REPORT", "SATELLITE"}

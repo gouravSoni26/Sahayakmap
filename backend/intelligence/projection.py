@@ -64,7 +64,9 @@ def project_flood_progression(
         danger_level = downstream.get("danger_level_m", 999)
 
         if travel_hours <= hours_ahead:
-            projected_level = current_level + (u_level - u_danger) * 0.8  # 80% transfer factor
+            # 80% transfer: not all upstream water reaches downstream — some spreads
+            # into floodplains. 0.8 is conservative for Mahanadi river basin geography.
+            projected_level = current_level + (u_level - u_danger) * 0.8
             status = "DANGER" if projected_level >= danger_level else "WARNING"
 
             projections.append({
@@ -76,7 +78,7 @@ def project_flood_progression(
                 "projected_status": status,
                 "eta_hours": travel_hours,
                 "based_on_station": upstream.get("name"),
-                "confidence": 0.60,
+                "confidence": 0.60,  # projections are inherently uncertain — "more likely than not"
             })
 
     return projections

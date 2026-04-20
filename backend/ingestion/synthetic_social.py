@@ -53,8 +53,11 @@ async def generate_social_reports(count: int = 3) -> None:
         lat += random.uniform(-0.05, 0.05)
         lng += random.uniform(-0.05, 0.05)
 
+        # Realistic distribution: most reports are moderate, critical is rare.
         severity = random.choices([2, 3, 4, 5], weights=[30, 40, 20, 10])[0]
         text = _generate_text(place_name)
+        # More retweets/similar reports = higher confidence. Capped at 0.70 because
+        # social media alone can never be fully trusted (could be coordinated misinformation).
         corroborating = random.randint(0, 8)
         confidence = min(0.30 + corroborating * 0.05, 0.70)
 

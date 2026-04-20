@@ -35,7 +35,8 @@ async def generate_district_reports() -> None:
 
     rows = []
     for district, lat, lng in DISTRICTS:
-        # Randomly skip some districts to simulate reporting gaps / silent districts
+        # 15% skip rate: simulates the "silent district" scenario needed for the demo.
+        # In real disasters, some districts go dark due to communication failure.
         if random.random() < 0.15:
             continue
 
