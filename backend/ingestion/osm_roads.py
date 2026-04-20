@@ -47,6 +47,14 @@ async def load_road_network() -> None:
 
     logger.info("Overpass returned %d ways, %d nodes", len(ways), len(nodes))
 
+    # Map OSM highway values to our CHECK constraint values
+    _highway_map = {
+        "trunk": "national_highway",
+        "trunk_link": "national_highway",
+        "primary": "state_highway",
+        "primary_link": "state_highway",
+    }
+
     route_rows = []
     for way in ways:
         coords = way.get("geometry", [])
@@ -54,10 +62,11 @@ async def load_road_network() -> None:
             continue
         linestring = "LINESTRING(" + ",".join(f"{c['lon']} {c['lat']}" for c in coords) + ")"
         ref = way.get("tags", {}).get("ref", "unknown")
+        osm_highway = way.get("tags", {}).get("highway", "")
         route_rows.append({
             "name": ref,
             "geometry": linestring,
-            "route_type": way.get("tags", {}).get("highway", "unknown"),
+            "route_type": _highway_map.get(osm_highway, "district_road"),
         })
 
     if route_rows:

@@ -5,9 +5,20 @@ Every data point has a half-life — the time after which its decision value
 drops by 50%. Used both for visual encoding (map opacity) and for the fusion
 engine's weighting when data conflicts.
 """
+import logging
 import math
 from datetime import datetime, timezone
 from enum import Enum
+
+logger = logging.getLogger(__name__)
+
+
+# Staleness threshold: freshness_factor below this = stale.
+# 0.25 ≈ past 2 half-lives. Shared constant so engine.py and is_stale() agree.
+STALE_THRESHOLD = 0.25
+
+# Minimum opacity for stale data on the map — never fully invisible.
+MIN_OPACITY = 0.2
 
 
 class DataType(str, Enum):
@@ -18,9 +29,10 @@ class DataType(str, Enum):
     SATELLITE = "SATELLITE"
     ROAD_STATUS = "ROAD_STATUS"
     DISTRICT_REPORT = "DISTRICT_REPORT"
+    ASSET_TRACKER = "ASSET_TRACKER"
 
 
-# Half-life in minutes for each data type
+# Half-life in minutes for each data type (matches MASTERPLAN.md table)
 HALF_LIFE_MINUTES: dict[DataType, float] = {
     DataType.RIVER_GAUGE: 30,
     DataType.WEATHER_SHORT: 60,
@@ -29,9 +41,12 @@ HALF_LIFE_MINUTES: dict[DataType, float] = {
     DataType.SATELLITE: 360,
     DataType.ROAD_STATUS: 240,
     DataType.DISTRICT_REPORT: 180,
+    DataType.ASSET_TRACKER: 15,
 }
 
-# Map from source_type string → DataType
+# Map from source_type string (DB/API) → DataType.
+# IMD_WEATHER maps to SHORT by default; callers can pass forecast_horizon_hours
+# to get_half_life() to select WEATHER_LONG when appropriate.
 SOURCE_TYPE_MAP: dict[str, DataType] = {
     "CWC_GAUGE": DataType.RIVER_GAUGE,
     "IMD_WEATHER": DataType.WEATHER_SHORT,
@@ -39,24 +54,46 @@ SOURCE_TYPE_MAP: dict[str, DataType] = {
     "SATELLITE": DataType.SATELLITE,
     "OSM_ROAD": DataType.ROAD_STATUS,
     "DISTRICT_REPORT": DataType.DISTRICT_REPORT,
+    "ASSET_TRACKER": DataType.ASSET_TRACKER,
 }
 
 
-def get_half_life(source_type: str) -> float:
-    """Return half-life in minutes for a given source type."""
-    data_type = SOURCE_TYPE_MAP.get(source_type, DataType.SOCIAL_MEDIA)
+def get_half_life(source_type: str, forecast_horizon_hours: float | None = None) -> float:
+    """Return half-life in minutes for a given source type.
+
+    For IMD_WEATHER, pass forecast_horizon_hours to distinguish short-range
+    (≤3h → 60 min half-life) from long-range (>3h → 180 min half-life).
+    """
+    data_type = SOURCE_TYPE_MAP.get(source_type)
+    if data_type is None:
+        logger.warning("Unknown source_type %r — no half-life mapping exists", source_type)
+        data_type = DataType.SOCIAL_MEDIA
+
+    if data_type == DataType.WEATHER_SHORT and forecast_horizon_hours and forecast_horizon_hours > 3:
+        data_type = DataType.WEATHER_LONG
+
     return HALF_LIFE_MINUTES[data_type]
 
 
-def freshness_factor(reported_at: datetime, half_life_minutes: float) -> float:
+def freshness_factor(
+    reported_at: datetime,
+    half_life_minutes: float,
+    now: datetime | None = None,
+) -> float:
     """
     Returns a value between 0.0 and 1.0.
     1.0 = just reported, 0.5 = one half-life old, 0.0 = infinitely stale.
     Uses exponential decay: f(t) = 0.5 ^ (age / half_life)
+
+    Pass `now` to override wall-clock time (for simulation mode and testing).
     """
-    now = datetime.now(timezone.utc)
+    if now is None:
+        now = datetime.now(timezone.utc)
+
     if reported_at.tzinfo is None:
         reported_at = reported_at.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
 
     age_minutes = (now - reported_at).total_seconds() / 60
     if age_minutes <= 0:
@@ -65,18 +102,50 @@ def freshness_factor(reported_at: datetime, half_life_minutes: float) -> float:
     return math.pow(0.5, age_minutes / half_life_minutes)
 
 
-def is_stale(reported_at: datetime, source_type: str, threshold: float = 0.25) -> bool:
+def is_stale(
+    reported_at: datetime,
+    source_type: str,
+    threshold: float = STALE_THRESHOLD,
+    now: datetime | None = None,
+) -> bool:
     """
     Returns True if the freshness factor is below the threshold.
     Default threshold of 0.25 ≈ 2 half-lives old.
     """
     hl = get_half_life(source_type)
-    return freshness_factor(reported_at, hl) < threshold
+    return freshness_factor(reported_at, hl, now=now) < threshold
+
+
+class FreshnessState(str, Enum):
+    """Visual state for map rendering (matches MASTERPLAN visual encoding spec)."""
+    FRESH = "FRESH"                # full opacity, solid border
+    AGING = "AGING"                # reduced opacity, solid border
+    VERY_STALE = "VERY_STALE"      # low opacity, dashed border
+    OFFLINE = "OFFLINE"            # faded + warning icon
+
+
+def visual_state(factor: float, source_online: bool = True) -> FreshnessState:
+    """
+    Determine the visual rendering state from a freshness factor.
+
+    MASTERPLAN spec:
+      - Full opacity        → fresh (factor > 0.5, i.e. within 1 half-life)
+      - 50% opacity         → past half-life (0.25 < factor ≤ 0.5)
+      - Dashed border       → past 2× half-life (factor ≤ 0.25)
+      - Faded + warning     → source offline
+    """
+    if not source_online:
+        return FreshnessState.OFFLINE
+    if factor > 0.5:
+        return FreshnessState.FRESH
+    if factor > STALE_THRESHOLD:
+        return FreshnessState.AGING
+    return FreshnessState.VERY_STALE
 
 
 def opacity_from_freshness(factor: float) -> float:
     """
-    Map freshness factor to a UI opacity value (0.2 – 1.0).
-    Very stale data is rendered at 20% opacity, never fully invisible.
+    Map freshness factor to a UI opacity value (MIN_OPACITY – 1.0).
+    Very stale data is rendered at minimum opacity, never fully invisible.
     """
-    return round(max(0.2, factor), 2)
+    return round(max(MIN_OPACITY, factor), 2)

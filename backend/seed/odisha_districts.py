@@ -24,19 +24,30 @@ DISTRICTS = [
 
 def seed():
     db = get_client()
+
     rows = [
         {
             "name": d["name"],
             "state": "Odisha",
             "population": d["population"],
-            # Boundary geometry would come from GeoJSON — placeholder point for now
-            "boundary": f"POINT({d['lng']} {d['lat']})",
-            "signal_strength": 1.0,
+            # Boundary will be loaded from GeoJSON in a later step
         }
         for d in DISTRICTS
     ]
     result = db.table("districts").upsert(rows, on_conflict="name").execute()
     print(f"Seeded {len(result.data)} districts")
+
+    # Seed district_status with default signal strength (1.0 = normal reporting)
+    # district_status is split from districts to keep reference data static
+    district_id_map = {d["name"]: d["id"] for d in result.data}
+    status_rows = [
+        {"district_id": district_id_map[d["name"]], "signal_strength": 1.0}
+        for d in DISTRICTS
+        if d["name"] in district_id_map
+    ]
+    if status_rows:
+        db.table("district_status").upsert(status_rows, on_conflict="district_id").execute()
+        print(f"Seeded {len(status_rows)} district_status rows")
 
 
 if __name__ == "__main__":

@@ -46,3 +46,28 @@ logs/
 # Coverage
 .coverage
 htmlcov/
+
+# Virtual envs inside backend/
+backend/mapback/
+backend/venv/
+
+# Temporary change-notes (use git log instead)
+**/*_changes.docx
+**/*_changes.doc
+
+# Generated reports/analysis docs
+**/*.docx
+
+# Graphify (regenerable)
+graphify-out/
+.graphify_cached.json
+.graphify_uncached.txt
+.graphify_python
+
+# One-off scripts
+gen_*.py
+generate_reports.py
+
+# Screenshots
+*.PNG
+*.png

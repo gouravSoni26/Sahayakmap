@@ -30,6 +30,20 @@ async def fetch_weather_forecasts() -> None:
     """Fetch 3-day hourly forecasts for all grid points and upsert into Supabase."""
     db = get_client()
 
+    # Look up the Open-Meteo data source ID once
+    src_result = (
+        db.table("data_sources")
+        .select("id")
+        .eq("type", "IMD_WEATHER")
+        .eq("name", "Open-Meteo Weather Forecast")
+        .limit(1)
+        .execute()
+    )
+    source_id = src_result.data[0]["id"] if src_result.data else None
+    if source_id is None:
+        logger.error("IMD_WEATHER data source not found in data_sources table — run seed.data_sources first")
+        return
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         for point in FORECAST_GRID:
             try:
@@ -44,7 +58,7 @@ async def fetch_weather_forecasts() -> None:
                 resp.raise_for_status()
                 data = resp.json()
 
-                rows = _parse_forecast(data, point)
+                rows = _parse_forecast(data, point, source_id)
                 if rows:
                     db.table("weather_forecasts").upsert(rows).execute()
                     logger.debug("Inserted %d forecast rows for %s", len(rows), point["name"])
@@ -53,7 +67,7 @@ async def fetch_weather_forecasts() -> None:
                 logger.error("Failed to fetch forecast for %s: %s", point["name"], e)
 
 
-def _parse_forecast(data: dict, point: dict) -> list[dict]:
+def _parse_forecast(data: dict, point: dict, source_id: str | None) -> list[dict]:
     hourly = data.get("hourly", {})
     times = hourly.get("time", [])
     rows = []
@@ -65,7 +79,7 @@ def _parse_forecast(data: dict, point: dict) -> list[dict]:
             "temperature_c": hourly.get("temperature_2m", [None])[i],
             "wind_speed_kmh": hourly.get("windspeed_10m", [None])[i],
             "wind_direction_deg": hourly.get("winddirection_10m", [None])[i],
+            "source_id": source_id,
             "fetched_at": datetime.now(timezone.utc).isoformat(),
-            "source": "open-meteo",
         })
     return rows

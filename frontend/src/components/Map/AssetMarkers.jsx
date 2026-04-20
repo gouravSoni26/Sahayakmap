@@ -1,6 +1,7 @@
 import { Marker, Tooltip } from 'react-leaflet'
 import L from 'leaflet'
 import { useAssets } from '../../hooks/useAssets'
+import { parseLocation } from '../../utils/constants'
 import useMapStore from '../../stores/mapStore'
 
 const STATUS_COLORS = {
@@ -25,17 +26,9 @@ export default function AssetMarkers() {
   const assets = data?.assets ?? []
 
   return assets.map((asset) => {
-    const loc = asset.location ?? ''
-    if (!loc) return null
-
-    let lat, lng
-    try {
-      const coords = loc.replace('POINT(', '').replace(')', '').split(' ')
-      lng = parseFloat(coords[0])
-      lat = parseFloat(coords[1])
-    } catch {
-      return null
-    }
+    const pos = parseLocation(asset.location)
+    if (!pos) return null
+    const [lat, lng] = pos
 
     return (
       <Marker

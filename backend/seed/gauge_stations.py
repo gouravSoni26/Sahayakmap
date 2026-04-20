@@ -17,7 +17,6 @@ GAUGE_STATIONS: dict[str, dict] = {
         "danger_level_m": 25.5,
         "warning_level_m": 22.0,
         "highest_flood_level_m": 28.96,
-        "avg_travel_time_hrs": None,  # downstream-most station
     },
     "MUNDULI": {
         "station_code": "MUNDULI",
@@ -28,7 +27,6 @@ GAUGE_STATIONS: dict[str, dict] = {
         "danger_level_m": 26.0,
         "warning_level_m": 23.0,
         "highest_flood_level_m": 29.10,
-        "avg_travel_time_hrs": 2,   # ~2 hrs to Naraj
     },
     "ALIPINGAL": {
         "station_code": "ALIPINGAL",
@@ -39,7 +37,6 @@ GAUGE_STATIONS: dict[str, dict] = {
         "danger_level_m": 43.0,
         "warning_level_m": 39.0,
         "highest_flood_level_m": 47.00,
-        "avg_travel_time_hrs": None,
     },
     "TIKARPARA": {
         "station_code": "TIKARPARA",
@@ -50,7 +47,6 @@ GAUGE_STATIONS: dict[str, dict] = {
         "danger_level_m": 38.5,
         "warning_level_m": 34.0,
         "highest_flood_level_m": 43.75,
-        "avg_travel_time_hrs": 6,
     },
     "JENAPUR": {
         "station_code": "JENAPUR",
@@ -61,7 +57,6 @@ GAUGE_STATIONS: dict[str, dict] = {
         "danger_level_m": 15.8,
         "warning_level_m": 13.0,
         "highest_flood_level_m": 17.50,
-        "avg_travel_time_hrs": None,
     },
     "ANANDPUR": {
         "station_code": "ANANDPUR",
@@ -72,13 +67,21 @@ GAUGE_STATIONS: dict[str, dict] = {
         "danger_level_m": 38.0,
         "warning_level_m": 34.0,
         "highest_flood_level_m": 41.60,
-        "avg_travel_time_hrs": None,
     },
 }
+
+# Upstream → downstream river adjacency with travel times.
+# Used to seed station_adjacency table (replaces the old upstream_station_id FK).
+# TIKARPARA is ~6hrs upstream of MUNDULI; MUNDULI is ~2hrs upstream of NARAJ.
+ADJACENCY = [
+    {"upstream": "TIKARPARA", "downstream": "MUNDULI", "avg_travel_time_hrs": 6},
+    {"upstream": "MUNDULI",   "downstream": "NARAJ",   "avg_travel_time_hrs": 2},
+]
 
 
 def seed():
     db = get_client()
+
     rows = []
     for code, s in GAUGE_STATIONS.items():
         rows.append({
@@ -94,6 +97,25 @@ def seed():
 
     result = db.table("gauge_stations").upsert(rows, on_conflict="station_code").execute()
     print(f"Seeded {len(result.data)} gauge stations")
+
+    # Seed station_adjacency for flood progression projection
+    station_map = {s["station_code"]: s["id"] for s in result.data}
+    adjacency_rows = []
+    for link in ADJACENCY:
+        up_id = station_map.get(link["upstream"])
+        down_id = station_map.get(link["downstream"])
+        if up_id and down_id:
+            adjacency_rows.append({
+                "upstream_id": up_id,
+                "downstream_id": down_id,
+                "avg_travel_time_hrs": link["avg_travel_time_hrs"],
+            })
+
+    if adjacency_rows:
+        db.table("station_adjacency").upsert(
+            adjacency_rows, on_conflict="upstream_id,downstream_id"
+        ).execute()
+        print(f"Seeded {len(adjacency_rows)} station adjacency links")
 
 
 if __name__ == "__main__":

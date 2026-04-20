@@ -52,7 +52,6 @@ async def generate_district_reports() -> None:
 
         rows.append({
             "source_id": source_id,
-            "source_type": "DISTRICT_REPORT",
             "location": f"POINT({lng:.4f} {lat:.4f})",
             "severity": severity,
             "confidence": 0.80,

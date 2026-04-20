@@ -1,6 +1,7 @@
 import { Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import { getSeverityColor } from '../../utils/severity'
+import { parseLocation } from '../../utils/constants'
 import { useAcknowledgeAlert } from '../../hooks/useAlerts'
 
 function makeAlertIcon(severity) {
@@ -13,17 +14,9 @@ function makeAlertIcon(severity) {
 export default function AlertPopup({ alert }) {
   const { mutate: ack } = useAcknowledgeAlert()
 
-  const loc = alert.location ?? ''
-  if (!loc) return null
-
-  let lat, lng
-  try {
-    const coords = loc.replace('POINT(', '').replace(')', '').split(' ')
-    lng = parseFloat(coords[0])
-    lat = parseFloat(coords[1])
-  } catch {
-    return null
-  }
+  const pos = parseLocation(alert.location)
+  if (!pos) return null
+  const [lat, lng] = pos
 
   return (
     <Marker position={[lat, lng]} icon={makeAlertIcon(alert.severity)}>

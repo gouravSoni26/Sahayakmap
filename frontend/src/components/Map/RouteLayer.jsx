@@ -12,11 +12,17 @@ export default function RouteLayer({ routes }) {
 
     let positions = []
     try {
-      const inner = geom.replace('LINESTRING(', '').replace(')', '')
-      positions = inner.split(',').map((pair) => {
-        const [lng, lat] = pair.trim().split(' ').map(Number)
-        return [lat, lng]
-      })
+      // Supabase returns geometry as GeoJSON: { type: "LineString", coordinates: [[lng,lat],...] }
+      if (typeof geom === 'object' && geom.coordinates) {
+        positions = geom.coordinates.map(([lng, lat]) => [lat, lng])
+      } else {
+        // WKT fallback
+        const inner = geom.replace('LINESTRING(', '').replace(')', '')
+        positions = inner.split(',').map((pair) => {
+          const [lng, lat] = pair.trim().split(' ').map(Number)
+          return [lat, lng]
+        })
+      }
     } catch {
       return null
     }

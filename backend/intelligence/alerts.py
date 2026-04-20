@@ -27,24 +27,41 @@ async def run_alert_checks() -> None:
     db = get_client()
     now = datetime.now(timezone.utc)
 
-    alerts = []
-    alerts += await _check_gauge_thresholds(db, now)
-    alerts += await _check_silent_districts(db, now)
-    alerts += await _check_camps_at_risk(db, now)
+    # Each check returns list of (alert_dict, [flood_report_ids])
+    alert_pairs: list[tuple[dict, list[str]]] = []
+    alert_pairs += await _check_gauge_thresholds(db, now)
+    alert_pairs += await _check_silent_districts(db, now)
+    alert_pairs += await _check_camps_at_risk(db, now)
 
-    for alert in alerts:
-        db.table("alerts").insert(alert).execute()
+    for alert_data, report_ids in alert_pairs:
+        result = db.table("alerts").insert(alert_data).execute()
+        if result.data and report_ids:
+            alert_id = result.data[0]["id"]
+            junction_rows = [
+                {"alert_id": alert_id, "flood_report_id": rid} for rid in report_ids
+            ]
+            db.table("alert_reports").insert(junction_rows).execute()
 
-    if alerts:
-        logger.info("Generated %d new alerts", len(alerts))
+    if alert_pairs:
+        logger.info("Generated %d new alerts", len(alert_pairs))
 
 
-async def _check_gauge_thresholds(db, now: datetime) -> list[dict]:
+async def _check_gauge_thresholds(db, now: datetime) -> list[tuple[dict, list[str]]]:
     since = (now - timedelta(hours=1)).isoformat()
+
+    # Look up CWC_GAUGE source IDs
+    cwc_sources = (
+        db.table("data_sources").select("id").eq("type", "CWC_GAUGE").execute().data or []
+    )
+    cwc_source_ids = [s["id"] for s in cwc_sources]
+
+    if not cwc_source_ids:
+        return []
+
     reports = (
         db.table("flood_reports")
         .select("*")
-        .eq("source_type", "CWC_GAUGE")
+        .in_("source_id", cwc_source_ids)
         .gte("reported_at", since)
         .execute()
         .data or []
@@ -52,7 +69,7 @@ async def _check_gauge_thresholds(db, now: datetime) -> list[dict]:
     gauges = db.table("gauge_stations").select("*").execute().data or []
     gauge_map = {g["station_code"]: g for g in gauges}
 
-    alerts = []
+    alert_pairs = []
     for r in reports:
         level = r.get("water_level_m")
         code = r.get("raw_payload", {}).get("station_code")
@@ -61,21 +78,20 @@ async def _check_gauge_thresholds(db, now: datetime) -> list[dict]:
 
         g = gauge_map[code]
         if level >= g["danger_level_m"]:
-            alerts.append({
+            alert_pairs.append(({
                 "type": "FLOOD_RISING",
                 "severity": 4,
                 "title": f"{g['name']} above danger level",
                 "description": f"{g['name']} gauge at {level:.2f}m — danger level is {g['danger_level_m']}m.",
                 "recommended_action": "Deploy rescue assets upstream. Alert downstream districts.",
-                "supporting_data": {"gauge_station": code, "level_m": level},
                 "expires_at": (now + timedelta(hours=2)).isoformat(),
-            })
-    return alerts
+            }, [r["id"]]))
+    return alert_pairs
 
 
-async def _check_silent_districts(db, now: datetime) -> list[dict]:
+async def _check_silent_districts(db, now: datetime) -> list[tuple[dict, list[str]]]:
     threshold = (now - timedelta(hours=SILENT_DISTRICT_HOURS)).isoformat()
-    districts = db.table("districts").select("*").execute().data or []
+    districts = db.table("districts").select("id, name, population").execute().data or []
     recent_reports = (
         db.table("flood_reports")
         .select("district_id")
@@ -85,10 +101,10 @@ async def _check_silent_districts(db, now: datetime) -> list[dict]:
     )
     active_district_ids = {r["district_id"] for r in recent_reports}
 
-    alerts = []
+    alert_pairs = []
     for d in districts:
         if d["id"] not in active_district_ids:
-            alerts.append({
+            alert_pairs.append(({
                 "type": "SILENT_DISTRICT",
                 "severity": 3,
                 "district_id": d["id"],
@@ -99,13 +115,12 @@ async def _check_silent_districts(db, now: datetime) -> list[dict]:
                     "Possible communication failure or evacuation in progress."
                 ),
                 "recommended_action": "Contact district collector directly. Dispatch liaison team.",
-                "supporting_data": {"district": d["name"], "population": d.get("population")},
                 "expires_at": (now + timedelta(hours=4)).isoformat(),
-            })
-    return alerts
+            }, []))  # no specific flood reports to link for silent districts
+    return alert_pairs
 
 
-async def _check_camps_at_risk(db, now: datetime) -> list[dict]:
+async def _check_camps_at_risk(db, now: datetime) -> list[tuple[dict, list[str]]]:
     camps = db.table("relief_camps").select("*").neq("status", "CLOSED").execute().data or []
     since = (now - timedelta(hours=3)).isoformat()
     severe_reports = (
@@ -117,9 +132,8 @@ async def _check_camps_at_risk(db, now: datetime) -> list[dict]:
         .data or []
     )
 
-    alerts = []
+    alert_pairs = []
     for camp in camps:
-        # Parse camp location from WKT "POINT(lng lat)"
         loc = camp.get("location", "")
         if not loc:
             continue
@@ -134,7 +148,7 @@ async def _check_camps_at_risk(db, now: datetime) -> list[dict]:
             if _report_within_km(r, c_lat, c_lng, CAMP_RISK_PROXIMITY_KM)
         ]
         if nearby:
-            alerts.append({
+            alert_pairs.append(({
                 "type": "CAMP_AT_RISK",
                 "severity": 4,
                 "title": f"Relief camp {camp['name']} may be at risk",
@@ -143,10 +157,9 @@ async def _check_camps_at_risk(db, now: datetime) -> list[dict]:
                     f"{camp['name']} (pop: {camp.get('current_population', 0)})."
                 ),
                 "recommended_action": "Assess flood risk at camp. Prepare evacuation plan.",
-                "supporting_data": {"camp_id": camp["id"], "nearby_report_count": len(nearby)},
                 "expires_at": (now + timedelta(hours=3)).isoformat(),
-            })
-    return alerts
+            }, [r["id"] for r in nearby]))
+    return alert_pairs
 
 
 def _report_within_km(report: dict, lat: float, lng: float, km: float) -> bool:

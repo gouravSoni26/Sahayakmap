@@ -1,5 +1,6 @@
 import { Marker, Tooltip, Popup } from 'react-leaflet'
 import L from 'leaflet'
+import { parseLocation } from '../../utils/constants'
 
 const STATUS_COLORS = {
   ACTIVE: '#22c55e',
@@ -16,17 +17,9 @@ function makeIcon(status) {
 
 export default function CampMarkers({ camps }) {
   return camps.map((camp) => {
-    const loc = camp.location ?? ''
-    if (!loc) return null
-
-    let lat, lng
-    try {
-      const coords = loc.replace('POINT(', '').replace(')', '').split(' ')
-      lng = parseFloat(coords[0])
-      lat = parseFloat(coords[1])
-    } catch {
-      return null
-    }
+    const pos = parseLocation(camp.location)
+    if (!pos) return null
+    const [lat, lng] = pos
 
     const pct = camp.max_capacity > 0
       ? Math.round((camp.current_population / camp.max_capacity) * 100)

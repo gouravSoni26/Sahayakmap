@@ -97,10 +97,10 @@ A real-time flood intelligence platform that:
 │ id (uuid)       │     │ id (uuid)        │     │ id (uuid)       │
 │ type (enum)     │     │ name (e.g. NH16) │     │ name            │
 │ name            │     │ geometry (line)  │     │ location (point)│
-│ capacity        │     │ status (enum)    │     │ elevation_m     │
-│ location (point)│     │ status_source    │     │ capacity        │
-│ status (enum)   │     │ last_verified_at │     │ current_pop     │
-│ assigned_district│    │ blocked_segments │     │ status (enum)   │
+│ capacity        │     │ route_type(enum) │     │ elevation_m     │
+│ location (point)│     │                  │     │ capacity        │
+│ status (enum)   │     │                  │     │ current_pop     │
+│ assigned_district│    │                  │     │ status (enum)   │
 │ last_updated_at │     └──────────────────┘     │ flood_risk_hrs  │
 └─────────────────┘                              └─────────────────┘
 
@@ -112,22 +112,27 @@ A real-time flood intelligence platform that:
 │ state           │     │ severity (1-5)   │     │ region          │
 │ boundary (poly) │     │ location (point) │     │ summary_text    │
 │ population      │     │ title            │     │ key_risks[]     │
-│ signal_strength │     │ description      │     │ recommendations│
-│ last_report_at  │     │ affected_area    │     │ confidence      │
-└─────────────────┘     │ generated_at     │     │ data_freshness  │
-                        │ acknowledged     │     │ stale_sources[] │
+└─────────────────┘     │ description      │     │ recommendations│
+                        │ affected_area    │     │ confidence      │
+                        │ generated_at     │     │ data_freshness  │
+                        │ acknowledged_at  │     │ stale_sources[] │
                         └──────────────────┘     └─────────────────┘
 
-┌──────────────────┐
-│  WeatherForecast │
-│──────────────────│
-│ id (uuid)        │
-│ location (point) │
-│ forecast_time    │
+┌──────────────────┐    ┌─────────────────┐      ┌──────────────────┐
+│  WeatherForecast │    │  DistrictStatus │      │ StationAdjacency │
+│──────────────────│    │─────────────────│      │──────────────────│
+│ id (uuid)        │    │ district_id (fk)│      │ upstream_id (fk) │
+│ source_id (fk)   │    │ signal_strength │      │downstream_id (fk)│
+│ location (point) │    │ last_report_at  │      │travel_time_hrs   │
+│ district_id (fk) │    │ updated_at      │      └──────────────────┘
+│ forecast_time    │    └─────────────────┘
 │ rainfall_mm      │
-│ wind_speed_kmh   │
-│ fetched_at       │
-└──────────────────┘
+│ wind_speed_kmh   │    ┌─────────────────┐
+│ fetched_at       │    │   AlertReport   │
+└──────────────────┘    │─────────────────│
+                        │ alert_id (fk)   │
+                        │ report_id (fk)  │
+                        └─────────────────┘
 ```
 
 ### Enums
@@ -164,8 +169,6 @@ CREATE TABLE districts (
     boundary GEOMETRY(Polygon, 4326),
     population INTEGER,
     area_sq_km REAL,
-    signal_strength REAL DEFAULT 1.0,  -- 0=silent, 1=normal reporting
-    last_report_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -179,8 +182,6 @@ CREATE TABLE gauge_stations (
     danger_level_m REAL NOT NULL,
     warning_level_m REAL NOT NULL,
     highest_flood_level_m REAL,
-    upstream_station_id UUID REFERENCES gauge_stations(id),
-    avg_travel_time_hrs REAL,  -- time for water to reach from upstream station
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -188,7 +189,7 @@ CREATE TABLE routes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,  -- e.g. "NH-16", "SH-12"
     geometry GEOMETRY(LineString, 4326) NOT NULL,
-    route_type TEXT,  -- national_highway, state_highway, district_road
+    route_type TEXT CHECK (route_type IN ('national_highway', 'state_highway', 'district_road')),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -222,7 +223,7 @@ CREATE TABLE relief_camps (
 
 CREATE TABLE data_sources (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    type TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('CWC_GAUGE', 'IMD_WEATHER', 'SATELLITE', 'SOCIAL_MEDIA', 'DISTRICT_REPORT', 'OSM_ROAD', 'ASSET_TRACKER')),
     name TEXT NOT NULL,
     base_reliability REAL DEFAULT 0.8 CHECK (base_reliability BETWEEN 0 AND 1),
     update_frequency_min INTEGER,
@@ -234,8 +235,7 @@ CREATE TABLE data_sources (
 
 CREATE TABLE flood_reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_id UUID REFERENCES data_sources(id),
-    source_type TEXT NOT NULL,
+    source_id UUID NOT NULL REFERENCES data_sources(id),
     location GEOMETRY(Point, 4326) NOT NULL,
     district_id UUID REFERENCES districts(id),
     severity INTEGER CHECK (severity BETWEEN 1 AND 5),
@@ -274,8 +274,8 @@ CREATE TABLE route_status (
     segment_start GEOMETRY(Point, 4326),
     segment_end GEOMETRY(Point, 4326),
     status TEXT DEFAULT 'UNKNOWN' CHECK (status IN ('OPEN', 'PARTIALLY_BLOCKED', 'BLOCKED', 'SUBMERGED', 'UNKNOWN')),
-    source_type TEXT,  -- which data source reported this
-    confidence REAL DEFAULT 0.5,
+    source_id UUID REFERENCES data_sources(id),
+    confidence REAL DEFAULT 0.5 CHECK (confidence BETWEEN 0 AND 1),
     reported_at TIMESTAMPTZ,
     expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -290,9 +290,8 @@ CREATE TABLE weather_forecasts (
     temperature_c REAL,
     wind_speed_kmh REAL,
     wind_direction_deg REAL,
-    fetched_at TIMESTAMPTZ DEFAULT NOW(),
-    source TEXT DEFAULT 'open-meteo',
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    source_id UUID REFERENCES data_sources(id),
+    fetched_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================
@@ -309,10 +308,8 @@ CREATE TABLE alerts (
     description TEXT NOT NULL,
     affected_population INTEGER,
     recommended_action TEXT,
-    supporting_data JSONB,  -- references to flood_reports that triggered this
     generated_at TIMESTAMPTZ DEFAULT NOW(),
-    acknowledged BOOLEAN DEFAULT FALSE,
-    acknowledged_at TIMESTAMPTZ,
+    acknowledged_at TIMESTAMPTZ,  -- NULL = unacknowledged; set to timestamp when acknowledged
     expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -331,6 +328,35 @@ CREATE TABLE situation_briefs (
 );
 
 -- ============================================
+-- DERIVED / JUNCTION TABLES
+-- ============================================
+
+-- Operational district state (split from static districts reference table)
+CREATE TABLE district_status (
+    district_id UUID PRIMARY KEY REFERENCES districts(id) ON DELETE CASCADE,
+    signal_strength REAL DEFAULT 1.0 CHECK (signal_strength BETWEEN 0 AND 1),  -- 0=silent, 1=normal reporting
+    last_report_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- River network adjacency (replaces single upstream_station_id FK in gauge_stations)
+-- Supports multiple upstream contributors per station (DAG topology)
+CREATE TABLE station_adjacency (
+    upstream_id UUID NOT NULL REFERENCES gauge_stations(id) ON DELETE CASCADE,
+    downstream_id UUID NOT NULL REFERENCES gauge_stations(id) ON DELETE CASCADE,
+    avg_travel_time_hrs REAL,  -- time for water to travel between these two stations
+    PRIMARY KEY (upstream_id, downstream_id),
+    CHECK (upstream_id <> downstream_id)
+);
+
+-- Junction table replacing alerts.supporting_data JSONB — enforces referential integrity
+CREATE TABLE alert_reports (
+    alert_id UUID NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+    flood_report_id UUID NOT NULL REFERENCES flood_reports(id) ON DELETE CASCADE,
+    PRIMARY KEY (alert_id, flood_report_id)
+);
+
+-- ============================================
 -- INDEXES for performance
 -- ============================================
 
@@ -341,9 +367,12 @@ CREATE INDEX idx_gauge_stations_location ON gauge_stations USING GIST(location);
 CREATE INDEX idx_rescue_assets_location ON rescue_assets USING GIST(location);
 CREATE INDEX idx_relief_camps_location ON relief_camps USING GIST(location);
 CREATE INDEX idx_alerts_severity ON alerts(severity DESC, generated_at DESC);
-CREATE INDEX idx_alerts_active ON alerts(acknowledged, expires_at);
+CREATE INDEX idx_alerts_active ON alerts(acknowledged_at, expires_at);
 CREATE INDEX idx_route_status_active ON route_status(status, expires_at);
 CREATE INDEX idx_weather_forecasts_time ON weather_forecasts(forecast_time, district_id);
+CREATE INDEX idx_station_adjacency_downstream ON station_adjacency(downstream_id);
+CREATE INDEX idx_alert_reports_alert ON alert_reports(alert_id);
+CREATE INDEX idx_district_status_last_report ON district_status(last_report_at);
 ```
 
 ### Key PostGIS Queries the System Uses
@@ -501,15 +530,29 @@ GET  /api/gauges                — All gauge stations with current readings
 GET  /api/gauges/{id}/history   — Water level history for a station (24h)
 
 GET  /api/alerts                — Active alerts, sorted by severity
-     Query params: ?district_id=X&min_severity=3&unacknowledged_only=true
+     ?min_severity=1&district_id=X&unacknowledged_only=true
+     &include_expired=false&limit=50&cursor=<ISO timestamp>
+     Response: {alerts[], count, next_cursor}
+     Pagination: cursor-based (pass next_cursor from previous response)
 PUT  /api/alerts/{id}/ack       — Acknowledge an alert
+     Body (optional): {acknowledged_by: string}
+     Returns 404 (not found) | 409 (already acknowledged or race condition)
+     Note: acknowledged_by requires DB migration — ALTER TABLE alerts ADD COLUMN acknowledged_by TEXT
 
 GET  /api/briefing              — Latest AI-generated situation brief
 POST /api/briefing/generate     — Force-generate a new brief
 
 GET  /api/assets                — All rescue assets with positions
+     ?asset_type=BOAT|HELICOPTER|RESCUE_TEAM|SUPPLY_TRUCK
+     &status=AVAILABLE|DEPLOYED|IN_TRANSIT|MAINTENANCE
+     &district_id=X
+     Response: {assets[], count}
 PUT  /api/assets/{id}/position  — Update asset position (simulation)
+     Body: {lat: float, lng: float}
+     Returns 404 if asset not found
 PUT  /api/assets/{id}/status    — Update asset status
+     Body: {status: AVAILABLE|DEPLOYED|IN_TRANSIT|MAINTENANCE}
+     Returns 404 if asset not found
 
 GET  /api/districts             — District overview (signal strength, report counts)
 GET  /api/districts/{id}        — District detail with all associated data
@@ -1038,3 +1081,35 @@ Start with: "Read MASTERPLAN.md and scaffold the project structure for Week 1, s
 ---
 
 *This document is the single source of truth for the SahayakMap capstone project. Update it as design decisions evolve.*
+
+---
+
+## Implementation Log
+
+### Apr 17, 2026 — api/ layer improvements (alerts.py + assets.py)
+
+**Patterns established (apply to all future api/ files):**
+- Query Builder Pattern — `Filter` dataclass list replaces if-else chains for optional query params
+- Repository Pattern — `XxxRepository` class centralizes all DB logic; endpoints stay clean
+- Dependency Injection — `get_valid_<entity>()` reusable `Depends()` function handles UUID format + existence check for all endpoints that take an entity ID
+- Enum types — all fixed-value fields use `str, Enum` subclass; FastAPI validates at API layer before DB is touched
+- UUID path params — always type path params as `UUID`, convert to `str` for Supabase
+- Explicit column lists — `LIST_COLUMNS` and `UPDATE_COLUMNS` constants replace `select("*")`
+- `.select()` after `.update()` — required for Supabase to return the updated row
+
+**alerts.py changes:**
+- Added expiry filter (`include_expired` param, default off)
+- Replaced offset pagination with cursor-based pagination (`cursor` + `next_cursor`)
+- Added `acknowledged_by` field to ack endpoint (requires DB migration)
+- Added optimistic lock on acknowledge (409 on race condition)
+- UUID validation on alert_id path param
+- 404 on missing alert_id
+
+**assets.py changes:**
+- Added `asset_type`, `status`, `district_id` filters to list endpoint
+- Applied Repository Pattern (AssetRepository class)
+- Applied Dependency Injection (get_valid_asset, get_asset_repository)
+- Enum validation on AssetStatus and AssetType
+- UUID validation on asset_id path param
+- 404 on missing asset_id
+- Fixed update endpoints to return updated row via `.select()`

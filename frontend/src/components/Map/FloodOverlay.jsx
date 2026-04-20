@@ -1,6 +1,7 @@
 import { CircleMarker, Tooltip } from 'react-leaflet'
 import { getSeverityColor } from '../../utils/severity'
 import { opacityFromFreshness } from '../../utils/freshness'
+import { parseLocation } from '../../utils/constants'
 
 /**
  * Renders flood report markers on the map.
@@ -10,23 +11,15 @@ import { opacityFromFreshness } from '../../utils/freshness'
  */
 export default function FloodOverlay({ reports }) {
   return reports
-    .filter((r) => r.source_type !== 'CWC_GAUGE') // gauges have their own layer
+    .filter((r) => r.data_sources?.type !== 'CWC_GAUGE') // gauges have their own layer
     .map((report) => {
-      const loc = report.location ?? ''
-      if (!loc) return null
-
-      let lat, lng
-      try {
-        const coords = loc.replace('POINT(', '').replace(')', '').split(' ')
-        lng = parseFloat(coords[0])
-        lat = parseFloat(coords[1])
-      } catch {
-        return null
-      }
+      const pos = parseLocation(report.location)
+      if (!pos) return null
+      const [lat, lng] = pos
 
       const color = getSeverityColor(report.severity ?? 1)
       const opacity = opacityFromFreshness(report.freshness_factor ?? 1)
-      const radius = report.source_type === 'SOCIAL_MEDIA' ? 6 : 10
+      const radius = report.data_sources?.type === 'SOCIAL_MEDIA' ? 6 : 10
       const dashed = report.is_stale
 
       return (
@@ -45,7 +38,7 @@ export default function FloodOverlay({ reports }) {
         >
           <Tooltip>
             <span className="text-xs">
-              [{report.source_type}] {report.description?.slice(0, 80)}
+              [{report.data_sources?.type ?? 'UNKNOWN'}] {report.description?.slice(0, 80)}
             </span>
           </Tooltip>
         </CircleMarker>
