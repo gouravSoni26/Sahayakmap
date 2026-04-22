@@ -39,17 +39,34 @@ async def run_alert_checks() -> None:
     alert_pairs += await _check_silent_districts(db, now)
     alert_pairs += await _check_camps_at_risk(db, now)
 
-    for alert_data, report_ids in alert_pairs:
-        result = db.table("alerts").insert(alert_data).execute()
-        if result.data and report_ids:
-            alert_id = result.data[0]["id"]
-            junction_rows = [
-                {"alert_id": alert_id, "flood_report_id": rid} for rid in report_ids
-            ]
-            db.table("alert_reports").insert(junction_rows).execute()
+    # Fetch existing unacknowledged alert (type, title) pairs to skip duplicates
+    existing = (
+        db.table("alerts")
+        .select("type, title")
+        .is_("acknowledged_at", "null")
+        .execute()
+        .data or []
+    )
+    existing_keys = {(a["type"], a["title"]) for a in existing}
 
-    if alert_pairs:
-        logger.info("Generated %d new alerts", len(alert_pairs))
+    inserted = 0
+    for alert_data, report_ids in alert_pairs:
+        key = (alert_data["type"], alert_data["title"])
+        if key in existing_keys:
+            continue
+        result = db.table("alerts").insert(alert_data).execute()
+        if result.data:
+            inserted += 1
+            existing_keys.add(key)  # prevent dupes within same run
+            if report_ids:
+                alert_id = result.data[0]["id"]
+                junction_rows = [
+                    {"alert_id": alert_id, "flood_report_id": rid} for rid in report_ids
+                ]
+                db.table("alert_reports").insert(junction_rows).execute()
+
+    if inserted:
+        logger.info("Generated %d new alerts (%d skipped as duplicates)", inserted, len(alert_pairs) - inserted)
 
 
 async def _check_gauge_thresholds(db, now: datetime) -> list[tuple[dict, list[str]]]:
@@ -144,9 +161,12 @@ async def _check_camps_at_risk(db, now: datetime) -> list[tuple[dict, list[str]]
         if not loc:
             continue
         try:
-            coords = loc.replace("POINT(", "").replace(")", "").split()
-            c_lat, c_lng = float(coords[1]), float(coords[0])
-        except (IndexError, ValueError):
+            if isinstance(loc, dict) and loc.get("type") == "Point":
+                c_lng, c_lat = loc["coordinates"]
+            else:
+                coords = loc.replace("POINT(", "").replace(")", "").split()
+                c_lat, c_lng = float(coords[1]), float(coords[0])
+        except (IndexError, ValueError, AttributeError, KeyError):
             continue
 
         nearby = [
@@ -173,8 +193,11 @@ def _report_within_km(report: dict, lat: float, lng: float, km: float) -> bool:
     if not loc:
         return False
     try:
-        coords = loc.replace("POINT(", "").replace(")", "").split()
-        r_lat, r_lng = float(coords[1]), float(coords[0])
+        if isinstance(loc, dict) and loc.get("type") == "Point":
+            r_lng, r_lat = loc["coordinates"]
+        else:
+            coords = loc.replace("POINT(", "").replace(")", "").split()
+            r_lat, r_lng = float(coords[1]), float(coords[0])
         return haversine_km(lat, lng, r_lat, r_lng) <= km
-    except (IndexError, ValueError):
+    except (IndexError, ValueError, AttributeError, KeyError):
         return False

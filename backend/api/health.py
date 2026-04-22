@@ -1,9 +1,12 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from supabase import Client
 
 from database import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -26,6 +29,7 @@ async def health(db: Client = Depends(get_db)):
     try:
         sources = db.table("data_sources").select(SOURCE_COLUMNS).execute().data or []
     except Exception as exc:
+        logger.error("Health check database error fetching data_sources: %s", exc)
         raise HTTPException(status_code=503, detail=f"Database unreachable: {exc}")
 
     # Build source_id → type lookup so we can map flood_reports rows back to
@@ -43,6 +47,7 @@ async def health(db: Client = Depends(get_db)):
             .data or []
         )
     except Exception as exc:
+        logger.error("Health check database error fetching flood_reports: %s", exc)
         raise HTTPException(status_code=503, detail=f"Database unreachable: {exc}")
 
     # Build freshness map: source_type → most recent reported_at

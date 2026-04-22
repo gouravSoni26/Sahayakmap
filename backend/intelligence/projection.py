@@ -52,7 +52,7 @@ def project_flood_progression(
             continue
 
         u_code = upstream.get("station_code")
-        u_level = level_map.get(u_code, 0)
+        u_level = level_map.get(u_code, 0) # pyright: ignore[reportArgumentType, reportCallIssue]
         u_danger = upstream.get("danger_level_m", 999)
 
         if u_level < u_danger:
@@ -60,7 +60,7 @@ def project_flood_progression(
 
         travel_hours = link.get("avg_travel_time_hrs") or 6
         d_code = downstream.get("station_code")
-        current_level = level_map.get(d_code, 0)
+        current_level = level_map.get(d_code, 0) # pyright: ignore[reportArgumentType, reportCallIssue]
         danger_level = downstream.get("danger_level_m", 999)
 
         if travel_hours <= hours_ahead:

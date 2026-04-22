@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from api import health, map_data, alerts, briefing, assets, districts, scenarios
-from ingestion.scheduler import start_scheduler, stop_scheduler
+from ingestion.scheduler import start_scheduler, stop_scheduler, get_scheduler_jobs
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting SahayakMap API...")
     await start_scheduler()
+    if not settings.simulation_mode:
+        jobs = get_scheduler_jobs()
+        if not jobs:
+            raise RuntimeError("Scheduler has no jobs registered. Check ingestion setup.")
+        logger.info("Scheduler running with %d jobs: %s", len(jobs), [j.id for j in jobs])
     yield
     logger.info("Shutting down SahayakMap API...")
     await stop_scheduler()

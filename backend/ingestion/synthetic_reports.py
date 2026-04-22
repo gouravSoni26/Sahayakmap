@@ -33,6 +33,10 @@ async def generate_district_reports() -> None:
     )
     source_id = source_result.data[0]["id"] if source_result.data else None
 
+    # Build name → id lookup so reports get district_id set (needed for silent district detection)
+    district_rows = db.table("districts").select("id, name").execute().data or []
+    district_id_map = {d["name"]: d["id"] for d in district_rows}
+
     rows = []
     for district, lat, lng in DISTRICTS:
         # 15% skip rate: simulates the "silent district" scenario needed for the demo.
@@ -53,6 +57,8 @@ async def generate_district_reports() -> None:
 
         rows.append({
             "source_id": source_id,
+            "source_type": "SYNTHETIC",
+            "district_id": district_id_map.get(district),
             "location": f"POINT({lng:.4f} {lat:.4f})",
             "severity": severity,
             "confidence": 0.80,

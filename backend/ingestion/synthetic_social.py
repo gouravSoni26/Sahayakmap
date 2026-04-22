@@ -63,6 +63,7 @@ async def generate_social_reports(count: int = 3) -> None:
 
         rows.append({
             "source_id": source_id,
+            "source_type": "SYNTHETIC",
             "location": f"POINT({lng:.4f} {lat:.4f})",
             "severity": severity,
             "confidence": round(confidence, 2),

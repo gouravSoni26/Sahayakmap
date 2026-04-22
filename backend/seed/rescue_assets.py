@@ -4,7 +4,11 @@ positioned across the Mahanadi basin districts.
 
 Run via:  python -m seed.rescue_assets
 """
+import logging
+
 from database import get_client
+
+logger = logging.getLogger(__name__)
 
 RESCUE_ASSETS = [
     # Boats
@@ -54,9 +58,9 @@ def seed():
     ]
 
     result = db.table("rescue_assets").upsert(rows, on_conflict="name").execute()
-    print(f"Seeded {len(result.data)} rescue assets")
+    logger.info(f"Seeded {len(result.data)} rescue assets")
     for a in result.data:
-        print(f"  [{a['type']}] {a['name']} — {a['status']}")
+        logger.info(f"  [{a['type']}] {a['name']} — {a['status']}")
 
 
 if __name__ == "__main__":

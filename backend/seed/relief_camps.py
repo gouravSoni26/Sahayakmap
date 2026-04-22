@@ -5,7 +5,11 @@ Manually curated for the demo. Elevations are approximate (source: SRTM 30m).
 
 Run via:  python -m seed.relief_camps
 """
+import logging
+
 from database import get_client
+
+logger = logging.getLogger(__name__)
 
 RELIEF_CAMPS = [
     {
@@ -71,7 +75,7 @@ def seed():
         })
 
     result = db.table("relief_camps").upsert(rows, on_conflict="name").execute()
-    print(f"Seeded {len(result.data)} relief camps")
+    logger.info(f"Seeded {len(result.data)} relief camps")
 
 
 if __name__ == "__main__":

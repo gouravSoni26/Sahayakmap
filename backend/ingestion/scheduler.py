@@ -1,6 +1,6 @@
 import logging
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.schedulers.asyncio import AsyncIOScheduler # pyright: ignore[reportMissingImports]
+from apscheduler.triggers.interval import IntervalTrigger # pyright: ignore[reportMissingImports]
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,11 @@ async def start_scheduler():
 
     _scheduler.start()
     logger.info("Ingestion scheduler started with %d jobs", len(_scheduler.get_jobs()))
+
+
+def get_scheduler_jobs() -> list:
+    """Return the list of registered APScheduler jobs (empty if scheduler not started)."""
+    return _scheduler.get_jobs()
 
 
 async def stop_scheduler():

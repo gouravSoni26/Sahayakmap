@@ -7,7 +7,11 @@ with approximate centroids and population estimates.
 
 Run via:  python -m seed.odisha_districts
 """
+import logging
+
 from database import get_client
+
+logger = logging.getLogger(__name__)
 
 # Key districts for the demo — approximate centroids and 2021 census populations
 DISTRICTS = [
@@ -35,7 +39,7 @@ def seed():
         for d in DISTRICTS
     ]
     result = db.table("districts").upsert(rows, on_conflict="name").execute()
-    print(f"Seeded {len(result.data)} districts")
+    logger.info(f"Seeded {len(result.data)} districts")
 
     # Seed district_status with default signal strength (1.0 = normal reporting)
     # district_status is split from districts to keep reference data static
@@ -47,7 +51,7 @@ def seed():
     ]
     if status_rows:
         db.table("district_status").upsert(status_rows, on_conflict="district_id").execute()
-        print(f"Seeded {len(status_rows)} district_status rows")
+        logger.info(f"Seeded {len(status_rows)} district_status rows")
 
 
 if __name__ == "__main__":

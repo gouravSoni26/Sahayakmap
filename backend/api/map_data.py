@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -7,6 +8,8 @@ from supabase import Client
 
 from database import get_db
 from fusion.engine import get_fused_map_data
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -43,8 +46,10 @@ def _add_lat_lng(record: dict) -> dict:
         geom = shapely_wkb.loads(loc, hex=True)
         record["lat"] = round(geom.y, 6)
         record["lng"] = round(geom.x, 6)
-    except Exception:
-        pass  # leave record without lat/lng if WKB parse fails; frontend handles gracefully
+    except Exception as e:
+        logger.warning("Failed to parse WKB location for record %s: %s", record.get("id"), e)
+        record["lat"] = None
+        record["lng"] = None
     return record
 
 
@@ -63,12 +68,17 @@ async def map_data(
         try:
             parts = [float(x) for x in bbox.split(",")]
             if len(parts) != 4:
-                raise ValueError
-            parsed_bbox = tuple(parts)
-        except ValueError:
+                raise ValueError("bbox must have exactly 4 values")
+            lat1, lng1, lat2, lng2 = parts
+            if not (-90 <= lat1 <= 90 and -90 <= lat2 <= 90):
+                raise ValueError("Latitude out of bounds (must be -90 to 90)")
+            if not (-180 <= lng1 <= 180 and -180 <= lng2 <= 180):
+                raise ValueError("Longitude out of bounds (must be -180 to 180)")
+            parsed_bbox = (lat1, lng1, lat2, lng2)
+        except ValueError as e:
             raise HTTPException(
                 status_code=422,
-                detail="bbox must be lat1,lng1,lat2,lng2 as four floats",
+                detail=f"Invalid bbox: {e}",
             )
 
     return await get_fused_map_data(bbox=parsed_bbox, hours=hours, min_severity=min_severity)

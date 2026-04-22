@@ -5,7 +5,8 @@ Real CWC data is available from https://ffs.india-water.gov.in but requires
 scraping HTML tables. Until that is implemented, this module generates
 realistic synthetic gauge readings based on known Mahanadi station metadata.
 
-TODO: Implement real CWC scraping once the dashboard endpoint is identified.
+TODO (production): Implement real CWC scraping from https://ffs.india-water.gov.in
+For now, all records generated here are SYNTHETIC — mark them accordingly.
 """
 import logging
 import random
@@ -64,6 +65,7 @@ async def fetch_gauge_readings() -> None:
 
         rows.append({
             "source_id": cwc_source_id,
+            "source_type": "SYNTHETIC",
             "location": f"POINT({meta['lng']} {meta['lat']})",
             "severity": _level_to_severity(level, meta),
             "water_level_m": level,

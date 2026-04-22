@@ -15,6 +15,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import anthropic
+from fastapi import HTTPException
 
 from config import settings
 from database import get_client
@@ -206,40 +207,45 @@ async def _build_analysis(db) -> dict:
     silent_cutoff = (datetime.now(timezone.utc) - timedelta(hours=SILENT_DISTRICT_HOURS)).isoformat()
 
     # Run all 5 independent DB queries in parallel — cuts wait time from 5x to 1x
-    reports, gauges, assets, adjacency, all_districts = await asyncio.gather(
-        asyncio.to_thread(lambda: (
-            db.table("flood_reports")
-            .select("*, data_sources(type)")
-            .gte("reported_at", since)
-            .order("reported_at", desc=True)
-            .execute()
-            .data or []
-        )),
-        asyncio.to_thread(lambda: (
-            db.table("gauge_stations")
-            .select(GAUGE_COLUMNS)
-            .execute()
-            .data or []
-        )),
-        asyncio.to_thread(lambda: (
-            db.table("rescue_assets")
-            .select(ASSET_COLUMNS)
-            .execute()
-            .data or []
-        )),
-        asyncio.to_thread(lambda: (
-            db.table("station_adjacency")
-            .select("upstream_id, downstream_id, avg_travel_time_hrs")
-            .execute()
-            .data or []
-        )),
-        asyncio.to_thread(lambda: (
-            db.table("districts")
-            .select("id, name")
-            .execute()
-            .data or []
-        )),
-    )
+    try:
+        reports, gauges, assets, adjacency, all_districts = await asyncio.gather(
+            asyncio.to_thread(lambda: (
+                db.table("flood_reports")
+                .select("*, data_sources(type)")
+                .gte("reported_at", since)
+                .order("reported_at", desc=True)
+                .execute()
+                .data or []
+            )),
+            asyncio.to_thread(lambda: (
+                db.table("gauge_stations")
+                .select(GAUGE_COLUMNS)
+                .execute()
+                .data or []
+            )),
+            asyncio.to_thread(lambda: (
+                db.table("rescue_assets")
+                .select(ASSET_COLUMNS)
+                .execute()
+                .data or []
+            )),
+            asyncio.to_thread(lambda: (
+                db.table("station_adjacency")
+                .select("upstream_id, downstream_id, avg_travel_time_hrs")
+                .execute()
+                .data or []
+            )),
+            asyncio.to_thread(lambda: (
+                db.table("districts")
+                .select("id, name")
+                .execute()
+                .data or []
+            )),
+        )
+        logger.debug("Analysis data fetched successfully")
+    except Exception as e:
+        logger.error("Failed to fetch analysis data: %s", e)
+        raise HTTPException(status_code=503, detail="Failed to build analysis")
 
     # Build a location-keyed map of the latest CWC water level for each gauge.
     # Supabase returns geometry as GeoJSON: {"type": "Point", "coordinates": [lng, lat]}

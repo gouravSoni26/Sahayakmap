@@ -24,7 +24,7 @@ _GAUGE_COLUMNS = (
     "id, station_code, name, river_name, basin, "
     "danger_level_m, warning_level_m, highest_flood_level_m, location"
 )
-_ASSET_COLUMNS = "id, name, type, status, capacity, operator, district_id, location, last_updated_at"
+_ASSET_COLUMNS = "id, name, type, status, capacity, assigned_district_id, location, last_updated_at"
 _CAMP_COLUMNS = (
     "id, name, status, elevation_m, max_capacity, current_population, "
     "flood_risk_hours, district_id, location"
@@ -150,6 +150,17 @@ async def get_fused_map_data(
 
     # Compute freshness metadata per source type
     source_freshness = _compute_source_freshness(reports)
+
+    # Weather freshness comes from weather_forecasts, not flood_reports
+    weather_result = (
+        db.table("weather_forecasts")
+        .select("fetched_at")
+        .order("fetched_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if weather_result.data:
+        source_freshness["IMD_WEATHER"] = weather_result.data[0]["fetched_at"]
 
     return {
         "generated_at": now.isoformat(),

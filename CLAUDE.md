@@ -66,3 +66,15 @@ ingestion/ → flood_reports table → fusion/ (confidence + freshness) → inte
 ## graphify
 
 Knowledge graph at `graphify-out/`. For architecture/codebase questions, read `graphify-out/GRAPH_REPORT.md` instead of exploring files manually. After modifying code, run `graphify update .` (AST-only, no API cost).
+
+## SahayakMap Project Rules
+
+- Always use Repository Pattern (XxxRepository class) for DB logic
+- Always use Query Builder Pattern (Filter dataclass) for optional params
+- Never refactor files not mentioned in the current task
+- Fusion functions should be standalone — no class wrapping unless asked
+- Match existing enum and UUID patterns from alerts.py / assets.py
+- Never select("*") — always use explicit LIST_COLUMNS / UPDATE_COLUMNS
+
+## Deferred Items
+- Issue #18 (Ollama URL config) — do NOT touch until Week 3 intelligence layer

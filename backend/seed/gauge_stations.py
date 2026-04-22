@@ -4,7 +4,11 @@ Source: MASTERPLAN.md — Data Sources section.
 
 Run via:  python -m seed.gauge_stations
 """
+import logging
+
 from database import get_client
+
+logger = logging.getLogger(__name__)
 
 # Keyed by station_code — also used by cwc_gauge.py for synthetic data
 GAUGE_STATIONS: dict[str, dict] = {
@@ -96,7 +100,7 @@ def seed():
         })
 
     result = db.table("gauge_stations").upsert(rows, on_conflict="station_code").execute()
-    print(f"Seeded {len(result.data)} gauge stations")
+    logger.info(f"Seeded {len(result.data)} gauge stations")
 
     # Seed station_adjacency for flood progression projection
     station_map = {s["station_code"]: s["id"] for s in result.data}
@@ -115,7 +119,7 @@ def seed():
         db.table("station_adjacency").upsert(
             adjacency_rows, on_conflict="upstream_id,downstream_id"
         ).execute()
-        print(f"Seeded {len(adjacency_rows)} station adjacency links")
+        logger.info(f"Seeded {len(adjacency_rows)} station adjacency links")
 
 
 if __name__ == "__main__":

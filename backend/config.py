@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import List
 
@@ -39,8 +40,31 @@ class Settings(BaseSettings):
     llm_timeout_sec: int = 60
 
     log_level: str = "INFO"
-    # CORS: Vite dev server (5173) and potential alternate port (3000)
+    # CORS: set CORS_ORIGINS=http://localhost:5173,https://yourapp.com in production
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def split_cors_origins(cls, v: object) -> object:
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",")]
+        return v
+
+    def model_post_init(self, __context: object) -> None:
+        missing = []
+        if not self.supabase_url:
+            missing.append("SUPABASE_URL")
+        if not self.supabase_anon_key:
+            missing.append("SUPABASE_ANON_KEY")
+        if not self.supabase_service_key:
+            missing.append("SUPABASE_SERVICE_KEY")
+        if not self.anthropic_api_key:
+            missing.append("ANTHROPIC_API_KEY")
+        if missing:
+            raise ValueError(
+                f"Missing required environment variables: {', '.join(missing)}. "
+                "Check your .env file."
+            )
 
     class Config:
         env_file = ".env"
@@ -48,4 +72,4 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 
-settings = Settings()
+settings = Settings() # type: ignore

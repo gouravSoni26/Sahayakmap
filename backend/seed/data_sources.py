@@ -5,7 +5,11 @@ as flood_reports.source_id references this table.
 
 Run via:  python -m seed.data_sources
 """
+import logging
+
 from database import get_client
+
+logger = logging.getLogger(__name__)
 
 DATA_SOURCES = [
     {
@@ -62,9 +66,9 @@ DATA_SOURCES = [
 def seed():
     db = get_client()
     result = db.table("data_sources").upsert(DATA_SOURCES, on_conflict="name").execute()
-    print(f"Seeded {len(result.data)} data sources")
+    logger.info(f"Seeded {len(result.data)} data sources")
     for s in result.data:
-        print(f"  [{s['type']}] {s['name']}")
+        logger.info(f"  [{s['type']}] {s['name']}")
 
 
 if __name__ == "__main__":

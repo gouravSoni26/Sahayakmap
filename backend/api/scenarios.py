@@ -10,6 +10,7 @@ The rest of the system is unaware it's a simulation.
 Scenario state is kept in-memory (_state dict) rather than in data_sources,
 because "SIMULATION" is not a valid data_sources.type enum value.
 """
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,6 +18,8 @@ from pydantic import BaseModel, Field
 from supabase import Client
 
 from database import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -118,7 +121,11 @@ async def _apply_step(db: Client, step: dict) -> None:
         now = datetime.now(timezone.utc).isoformat()
         for report in flood_reports:
             row = {k: v for k, v in report.items() if k != "_source_type"}
-            row["source_id"] = source_id_map[report["_source_type"]]
+            try:
+                source_type = report["_source_type"]
+                row["source_id"] = source_id_map[source_type]
+            except KeyError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid source_type: {e}")
             row.setdefault("reported_at", now)
             if "location" in row:
                 row["location"] = _as_ewkt(row["location"])
@@ -127,12 +134,14 @@ async def _apply_step(db: Client, step: dict) -> None:
                 if not result.data:
                     errors.append(f"flood_report insert returned no data: {row.get('description', '')[:60]}")
             except Exception as exc:
+                logger.error("Unexpected error inserting flood_report: %s", exc)
                 errors.append(f"flood_report insert failed: {exc}")
 
     for asset in step.get("asset_updates", []):
         try:
             db.table("rescue_assets").update(asset["data"]).eq("id", asset["id"]).execute()
         except Exception as exc:
+            logger.error("Unexpected error updating asset id=%s: %s", asset.get("id"), exc)
             errors.append(f"asset update failed for id={asset.get('id')}: {exc}")
 
     for alert in step.get("alerts", []):
@@ -144,6 +153,7 @@ async def _apply_step(db: Client, step: dict) -> None:
             if not result.data:
                 errors.append(f"alert insert returned no data: {row.get('title', '')[:60]}")
         except Exception as exc:
+            logger.error("Unexpected error inserting alert: %s", exc)
             errors.append(f"alert insert failed: {exc}")
 
     if errors:

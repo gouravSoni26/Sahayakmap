@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable
@@ -7,6 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from supabase import Client
 
 from database import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -62,6 +65,7 @@ class DistrictRepository:
                 .data or []
             )
         except Exception as exc:
+            logger.error("Database error fetching districts: %s", exc)
             raise RepositoryError(f"Failed to fetch districts: {exc}") from exc
 
     def get_one(self, district_id: str) -> dict | None:
@@ -75,6 +79,7 @@ class DistrictRepository:
             )
             return result.data[0] if result.data else None
         except Exception as exc:
+            logger.error("Database error fetching district %s: %s", district_id, exc)
             raise RepositoryError(f"Failed to fetch district {district_id}: {exc}") from exc
 
     def get_reports(self, district_id: str, since: str, limit: int = 100) -> list[dict]:
@@ -91,6 +96,7 @@ class DistrictRepository:
                 .data or []
             )
         except Exception as exc:
+            logger.error("Database error fetching reports for district %s: %s", district_id, exc)
             raise RepositoryError(f"Failed to fetch reports for district {district_id}: {exc}") from exc
 
     def get_assets(self, district_id: str) -> list[dict]:
@@ -105,6 +111,7 @@ class DistrictRepository:
                 .data or []
             )
         except Exception as exc:
+            logger.error("Database error fetching assets for district %s: %s", district_id, exc)
             raise RepositoryError(f"Failed to fetch assets for district {district_id}: {exc}") from exc
 
     def get_camps(self, district_id: str) -> list[dict]:
@@ -119,6 +126,7 @@ class DistrictRepository:
                 .data or []
             )
         except Exception as exc:
+            logger.error("Database error fetching camps for district %s: %s", district_id, exc)
             raise RepositoryError(f"Failed to fetch camps for district {district_id}: {exc}") from exc
 
 

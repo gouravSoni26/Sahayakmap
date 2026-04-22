@@ -6,7 +6,11 @@ These are pre-seeded with known major highways. The OSM Overpass loader
 
 Run via:  python -m seed.routes_bridges
 """
+import logging
+
 from database import get_client
+
+logger = logging.getLogger(__name__)
 
 ROUTES = [
     {"name": "NH-16", "route_type": "national_highway",
@@ -46,7 +50,7 @@ def seed():
         for r in ROUTES
     ]
     route_result = db.table("routes").upsert(route_rows, on_conflict="name").execute()
-    print(f"Seeded {len(route_result.data)} routes")
+    logger.info(f"Seeded {len(route_result.data)} routes")
 
     # Get gauge IDs for bridge FK
     gauges = db.table("gauge_stations").select("id, station_code").execute().data or []
@@ -65,7 +69,7 @@ def seed():
         for b in BRIDGES
     ]
     bridge_result = db.table("bridges").upsert(bridge_rows, on_conflict="name").execute()
-    print(f"Seeded {len(bridge_result.data)} bridges")
+    logger.info(f"Seeded {len(bridge_result.data)} bridges")
 
 
 if __name__ == "__main__":

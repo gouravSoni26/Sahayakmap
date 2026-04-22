@@ -105,7 +105,7 @@ def _social_vs_social_conflicts(social_reports: list[dict], window_seconds: floa
         low_count = sum(1 for s in severities if s <= 2)
 
         if high_count >= 2 and low_count >= 2:
-            clustered.update(r.get("id") for r in cluster)
+            clustered.update(r.get("id") for r in cluster) # pyright: ignore[reportArgumentType]
             avg_severity = sum(severities) / len(severities)
             conflicts.append(Conflict(
                 type=ConflictType.SOCIAL_CONTRADICTS_SOCIAL,
