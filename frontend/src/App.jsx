@@ -4,6 +4,7 @@ import FloodMap from './components/Map/FloodMap'
 import SituationPanel from './components/Panel/SituationPanel'
 import AlertList from './components/Panel/AlertList'
 import AssetPanel from './components/Panel/AssetPanel'
+import DemoControls from './components/Panel/DemoControls'
 import DataFreshness from './components/Panel/DataFreshness'
 import { useAlerts } from './hooks/useAlerts'
 
@@ -44,6 +45,7 @@ export default function App() {
         {/* Map */}
         <div className="flex-1 relative">
           <FloodMap />
+          <DemoControls />
         </div>
 
         {/* Side Panel — hidden on mobile (becomes bottom drawer) */}

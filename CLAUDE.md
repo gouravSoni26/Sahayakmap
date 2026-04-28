@@ -67,6 +67,8 @@ ingestion/ → flood_reports table → fusion/ (confidence + freshness) → inte
 
 Knowledge graph at `graphify-out/`. For architecture/codebase questions, read `graphify-out/GRAPH_REPORT.md` instead of exploring files manually. After modifying code, run `graphify update .` (AST-only, no API cost).
 
+**Graph source rule:** Always use `graphify-out/graph.json` and `graphify-out/GRAPH_REPORT.md` as the knowledge graph source. Never read `graphify-out/graph.graphml` — it exists only for Gephi/3D visualization and must be ignored during development.
+
 ## SahayakMap Project Rules
 
 - Always use Repository Pattern (XxxRepository class) for DB logic

@@ -106,30 +106,20 @@ class AssetRepository:
 
     def update_position(self, asset_id: str, lat: float, lng: float) -> dict | None:
         """Move an asset to a new location. Returns updated row or None if not found."""
-        result = (
-            self.db.table("rescue_assets")
-            .update({
-                "location": f"POINT({lng} {lat})",
-                "last_updated_at": datetime.now(timezone.utc).isoformat(),
-            })
-            .eq("id", asset_id)
-            .select(UPDATE_COLUMNS)  # type: ignore
-            .execute()
-        )
+        self.db.table("rescue_assets").update({
+            "location": f"SRID=4326;POINT({lng} {lat})",
+            "last_updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", asset_id).execute()
+        result = self.db.table("rescue_assets").select(UPDATE_COLUMNS).eq("id", asset_id).execute()
         return result.data[0] if result.data else None
 
     def update_status(self, asset_id: str, status: AssetStatus) -> dict | None:
         """Change an asset's operational status. Returns updated row or None if not found."""
-        result = (
-            self.db.table("rescue_assets")
-            .update({
-                "status": status.value,
-                "last_updated_at": datetime.now(timezone.utc).isoformat(),
-            })
-            .eq("id", asset_id)
-            .select(UPDATE_COLUMNS)  # type: ignore
-            .execute()
-        )
+        self.db.table("rescue_assets").update({
+            "status": status.value,
+            "last_updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", asset_id).execute()
+        result = self.db.table("rescue_assets").select(UPDATE_COLUMNS).eq("id", asset_id).execute()
         return result.data[0] if result.data else None
 
 

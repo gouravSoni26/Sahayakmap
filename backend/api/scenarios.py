@@ -124,6 +124,7 @@ async def _apply_step(db: Client, step: dict) -> None:
             try:
                 source_type = report["_source_type"]
                 row["source_id"] = source_id_map[source_type]
+                row["source_type"] = source_type
             except KeyError as e:
                 raise HTTPException(status_code=400, detail=f"Invalid source_type: {e}")
             row.setdefault("reported_at", now)

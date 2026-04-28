@@ -1,6 +1,6 @@
 import { Marker, Tooltip } from 'react-leaflet'
 import L from 'leaflet'
-import { useAssets } from '../../hooks/useAssets'
+import { useAssets, useUpdateAssetPosition } from '../../hooks/useAssets'
 import { parseLocation } from '../../utils/constants'
 import useMapStore from '../../stores/mapStore'
 
@@ -23,6 +23,7 @@ function makeIcon(asset) {
 export default function AssetMarkers() {
   const { data } = useAssets()
   const setSelectedAsset = useMapStore((s) => s.setSelectedAsset)
+  const { mutate: updatePosition } = useUpdateAssetPosition()
   const assets = data?.assets ?? []
 
   return assets.map((asset) => {
@@ -30,12 +31,21 @@ export default function AssetMarkers() {
     if (!pos) return null
     const [lat, lng] = pos
 
+    function handleDragEnd(e) {
+      const { lat: newLat, lng: newLng } = e.target.getLatLng()
+      updatePosition(
+        { assetId: asset.id, lat: newLat, lng: newLng },
+        { onError: (err) => console.error('Failed to update asset position:', err) },
+      )
+    }
+
     return (
       <Marker
         key={asset.id}
         position={[lat, lng]}
         icon={makeIcon(asset)}
-        eventHandlers={{ click: () => setSelectedAsset(asset) }}
+        draggable={true}
+        eventHandlers={{ click: () => setSelectedAsset(asset), dragend: handleDragEnd }}
       >
         <Tooltip>
           <strong>{asset.name}</strong> ({asset.type})<br />
