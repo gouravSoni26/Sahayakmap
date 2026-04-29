@@ -38,6 +38,7 @@ async def run_alert_checks() -> None:
     alert_pairs += await _check_gauge_thresholds(db, now)
     alert_pairs += await _check_silent_districts(db, now)
     alert_pairs += await _check_camps_at_risk(db, now)
+    alert_pairs += await _check_bridge_submersion(db, now)
 
     # Fetch existing unacknowledged alert (type, title) pairs to skip duplicates
     existing = (
@@ -185,6 +186,116 @@ async def _check_camps_at_risk(db, now: datetime) -> list[tuple[dict, list[str]]
                 "recommended_action": "Assess flood risk at camp. Prepare evacuation plan.",
                 "expires_at": (now + timedelta(hours=3)).isoformat(),
             }, [r["id"] for r in nearby]))
+    return alert_pairs
+
+
+async def _check_bridge_submersion(db, now: datetime) -> list[tuple[dict, list[str]]]:
+    bridges = (
+        db.table("bridges")
+        .select("id,name,location,flood_tolerance_m,nearest_gauge_id")
+        .execute()
+        .data or []
+    )
+    if not bridges:
+        return []
+
+    # Build gauge_id → station_code map for all nearest gauges in one query
+    gauge_ids = [b["nearest_gauge_id"] for b in bridges if b.get("nearest_gauge_id")]
+    if not gauge_ids:
+        return []
+    gauges = (
+        db.table("gauge_stations")
+        .select("id,station_code")
+        .in_("id", gauge_ids)
+        .execute()
+        .data or []
+    )
+    gauge_code_map = {g["id"]: g["station_code"] for g in gauges}
+
+    # CWC_GAUGE source IDs — same pattern as _check_gauge_thresholds
+    cwc_sources = (
+        db.table("data_sources").select("id").eq("type", "CWC_GAUGE").execute().data or []
+    )
+    cwc_source_ids = [s["id"] for s in cwc_sources]
+    if not cwc_source_ids:
+        return []
+
+    # Batch-fetch recent CWC readings (ordered DESC so first match = latest per station)
+    since = (now - timedelta(hours=3)).isoformat()
+    gauge_reports = (
+        db.table("flood_reports")
+        .select("id,source_id,water_level_m,reported_at,raw_payload")
+        .in_("source_id", cwc_source_ids)
+        .gte("reported_at", since)
+        .order("reported_at", desc=True)
+        .execute()
+        .data or []
+    )
+
+    # Batch-fetch corroboration reports (severity >= 3) for proximity checks
+    severe_reports = (
+        db.table("flood_reports")
+        .select("*")
+        .gte("reported_at", since)
+        .gte("severity", 3)
+        .execute()
+        .data or []
+    )
+
+    alert_pairs = []
+    for bridge in bridges:
+        gauge_id = bridge.get("nearest_gauge_id")
+        tolerance = bridge.get("flood_tolerance_m")
+        if not gauge_id or not tolerance:
+            continue
+
+        station_code = gauge_code_map.get(gauge_id)
+        if not station_code:
+            continue
+
+        # Latest reading for this gauge — first match in DESC-ordered list
+        latest = next(
+            (r for r in gauge_reports
+             if r.get("raw_payload", {}).get("station_code") == station_code),
+            None,
+        )
+        if not latest:
+            continue
+        water_level = latest.get("water_level_m")
+        if not water_level or water_level < tolerance:
+            continue
+
+        loc = bridge.get("location", "")
+        if not loc:
+            continue
+        try:
+            if isinstance(loc, dict) and loc.get("type") == "Point":
+                b_lng, b_lat = loc["coordinates"]
+            else:
+                coords = loc.replace("POINT(", "").replace(")", "").split()
+                b_lat, b_lng = float(coords[1]), float(coords[0])
+        except (IndexError, ValueError, AttributeError, KeyError):
+            continue
+
+        nearby = [
+            r for r in severe_reports
+            if _report_within_km(r, b_lat, b_lng, 2.0)
+        ]
+        if len(nearby) < BRIDGE_CORROBORATION_COUNT:
+            continue
+
+        alert_pairs.append(({
+            "type": "BRIDGE_SUBMERGED",
+            "severity": 4,
+            "title": f"{bridge['name']} bridge — submersion risk",
+            "description": (
+                f"Gauge at {water_level:.2f}m exceeds {bridge['name']} flood tolerance "
+                f"({tolerance:.2f}m). {len(nearby)} severity-3+ reports within 2km confirm flooding."
+            ),
+            "recommended_action": "Close bridge immediately. Reroute traffic and deploy water rescue teams.",
+            "location": bridge["location"],
+            "expires_at": (now + timedelta(hours=2)).isoformat(),
+        }, [r["id"] for r in nearby]))
     return alert_pairs
 
 

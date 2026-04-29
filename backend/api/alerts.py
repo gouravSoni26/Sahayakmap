@@ -18,6 +18,13 @@ LIST_COLUMNS = (
     "id,type,severity,title,district_id,location,"
     "generated_at,acknowledged_at,expires_at,recommended_action"
 )
+# Detail view adds description (excluded from list view — long text field).
+DETAIL_COLUMNS = (
+    "id,type,severity,title,description,district_id,location,"
+    "generated_at,acknowledged_at,expires_at,recommended_action"
+)
+# Explicit columns for linked flood_reports — never select("*").
+REPORT_COLUMNS = "id,source_type,severity,description,location,reported_at"
 
 
 # ── Query Builder ────────────────────────────────────────────────────────────
@@ -128,6 +135,86 @@ async def list_alerts(
     )
 
     return {"alerts": data, "count": len(data), "next_cursor": next_cursor}
+
+
+# ── Repository ───────────────────────────────────────────────────────────────
+
+class AlertRepository:
+    """All database operations for the alerts table live here."""
+
+    def __init__(self, db: Client):
+        self.db = db
+
+    def get_by_id(self, alert_id: str) -> dict | None:
+        """Fetch a single alert plus its linked flood_reports. Returns None if not found."""
+        result = self.db.table("alerts").select(DETAIL_COLUMNS).eq("id", alert_id).execute()
+        if not result.data:
+            return None
+        alert = result.data[0]
+
+        # Resolve linked report IDs via alert_reports junction table
+        junction = (
+            self.db.table("alert_reports")
+            .select("flood_report_id")
+            .eq("alert_id", alert_id)
+            .execute()
+            .data or []
+        )
+        report_ids = [r["flood_report_id"] for r in junction]
+        reports = []
+        if report_ids:
+            reports = (
+                self.db.table("flood_reports")
+                .select(REPORT_COLUMNS)
+                .in_("id", report_ids)
+                .execute()
+                .data or []
+            )
+        alert["flood_reports"] = reports
+        return alert
+
+
+# ── Dependency Injection ──────────────────────────────────────────────────────
+
+def get_alert_repository(db: Client = Depends(get_db)) -> AlertRepository:
+    return AlertRepository(db)
+
+
+def get_valid_alert(
+    alert_id: UUID,
+    repo: AlertRepository = Depends(get_alert_repository),
+) -> str:
+    """
+    Dependency that validates the alert_id format (UUID) AND confirms the
+    alert exists. Raises 404 if not found, 422 if UUID is malformed.
+    """
+    result = (
+        repo.db.table("alerts")
+        .select("id")
+        .eq("id", str(alert_id))
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail=f"Alert '{alert_id}' not found.")
+    return str(alert_id)
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("/alerts/{alert_id}")
+async def get_alert(
+    alert_id: str = Depends(get_valid_alert),
+    repo: AlertRepository = Depends(get_alert_repository),
+):
+    """
+    Full alert detail including linked flood_reports via alert_reports junction.
+    - 404 if alert_id does not exist.
+    - 422 if alert_id is not a valid UUID.
+    """
+    alert = repo.get_by_id(alert_id)
+    if alert is None:
+        raise HTTPException(status_code=404, detail=f"Alert '{alert_id}' not found.")
+    return {"alert": alert}
 
 
 @router.put("/alerts/{alert_id}/ack")

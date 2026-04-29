@@ -1121,3 +1121,99 @@ Start with: "Read MASTERPLAN.md and scaffold the project structure for Week 1, s
 - briefing.py: full fallback chain — Claude → Groq → Ollama → template
 - config.py: startup validation fixed, Groq-only deploys now work
 - Issue #18 resolved: Ollama URL config unblocked
+
+### Apr 29, 2026 — Week 3 Day 1 complete
+
+- briefing.py: full LLM fallback chain implemented (Claude → Groq → Ollama → template)
+- config.py: startup validation fixed, Groq-only deploys work
+- Groq model: openai/gpt-oss-120b (active, verified)
+- Day 1 verified: Groq firing, natural language briefings confirmed
+- Issue #18 resolved: Ollama URL config unblocked
+- ANTHROPIC_API_KEY deferred to demo day (May 14-15)
+
+### Apr 29, 2026 — Week 3 Day 2 complete
+
+- AlertList.jsx: accordion expandable added
+- Collapsed: title + severity badge + ack button
+- Expanded: full description, recommended_action, type badge, timestamp
+- Chevron tooltip: "Why this alert?"
+
+### Apr 29, 2026 — Week 3 Progress Summary (resume point)
+
+COMPLETED:
+- Week 2 fully closed:
+  - AssetMarkers.jsx: draggable markers with dragend → PUT /api/assets/:id/position
+  - DemoControls.jsx: scenario simulation panel, bottom-left, polls /api/scenario/state
+  - App.jsx: DemoControls wired alongside FloodMap
+
+- Week 3 Day 1: LLM fallback chain
+  - briefing.py: Claude → Groq → Ollama → template fallback chain
+  - config.py: startup validation fixed, Groq-only deploys work
+  - Issue #18 resolved: Ollama URL config unblocked
+  - Groq model: openai/gpt-oss-120b (verified working)
+  - ANTHROPIC_API_KEY deferred to demo day (May 14-15)
+
+- Week 3 Day 2: Alert expandable
+  - AlertList.jsx: accordion expandable per alert row
+  - Collapsed: title + severity badge + ack button
+  - Expanded: description, recommended_action, type badge, timestamp
+  - Chevron tooltip: "Why this alert?"
+
+NEXT (resume here):
+- Week 3 Day 3: Bridge submersion alert rule + GET /api/alerts/{alert_id} detail endpoint
+  - File: backend/intelligence/alerts.py → implement _check_bridge_submersion()
+  - File: backend/api/alerts.py → add detail endpoint with alert_reports junction
+- Week 3 Day 4: Recommended actions → map highlighting via Zustand
+  - Files: SituationPanel.jsx, mapStore.js, AssetMarkers.jsx
+- Week 3 Day 5-7: Integration test + Cyclone Fani scenario end-to-end
+
+### Apr 29, 2026 — Week 3 Day 3 complete
+
+- intelligence/alerts.py: implemented _check_bridge_submersion()
+  - Joins bridges table with nearest_gauge_id → gauge_stations (water_level_m, name)
+  - Skips bridges where water_level_m < flood_tolerance_m
+  - Queries severity-3+ flood_reports within last 3h, filters to within 2km via haversine_km
+  - Emits BRIDGE_SUBMERGED alert (severity=4) only if corroborating reports >= BRIDGE_CORROBORATION_COUNT
+  - BRIDGE_CORROBORATION_COUNT = 3 defined as module-level constant (line 25)
+  - Wired into run_alert_checks() after _check_camps_at_risk()
+  - Linked report IDs flow into alert_reports junction table via existing run_alert_checks() loop
+
+- api/alerts.py: added GET /api/alerts/{alert_id} detail endpoint
+  - DETAIL_COLUMNS: LIST_COLUMNS + description
+  - REPORT_COLUMNS: explicit columns for linked flood_reports
+  - AlertRepository.get_by_id(): fetches alert row + resolves alert_reports junction → flood_reports, embedded as alert["flood_reports"]
+  - get_valid_alert() / get_alert_repository(): exact DI pattern from assets.py
+  - UUID malformed → 422, not found → 404
+  - Endpoint delegates entirely to repository, no inline DB code
+
+NEXT (resume here):
+- Week 3 Day 4: Recommended actions → map highlighting via Zustand
+  - Files: SituationPanel.jsx, mapStore.js, AssetMarkers.jsx
+
+  ### Apr 29, 2026 — Week 3 Day 3 complete
+
+- intelligence/alerts.py: implemented _check_bridge_submersion()
+  - 3 pre-loop queries (no N+1): gauge_stations (id, station_code map) → data_sources (CWC_GAUGE ids) → flood_reports (latest CWC readings, ordered DESC)
+  - Skips bridges where latest water_level_m < flood_tolerance_m
+  - Corroboration: severity-3+ flood_reports within last 3h, filtered to within 2km via haversine_km
+  - Emits BRIDGE_SUBMERGED alert (severity=4) only if corroborating reports >= BRIDGE_CORROBORATION_COUNT
+  - BRIDGE_CORROBORATION_COUNT = 3 as module-level constant (line 25) alongside SILENT_DISTRICT_HOURS and CAMP_RISK_PROXIMITY_KM
+  - Wired into run_alert_checks() after _check_camps_at_risk()
+  - Bug fixed: original FK join select("*, gauge_stations(water_level_m, name)") failed (column doesn't exist on static table) — replaced with 3-query pattern
+
+- api/alerts.py: added GET /api/alerts/{alert_id} detail endpoint
+  - DETAIL_COLUMNS: LIST_COLUMNS + description
+  - REPORT_COLUMNS: explicit columns for linked flood_reports
+  - AlertRepository.get_by_id(): fetches alert row + resolves alert_reports junction → flood_reports, embedded as alert["flood_reports"]
+  - get_valid_alert() / get_alert_repository(): exact DI pattern from assets.py
+  - UUID malformed → 422, not found → 404
+  - Endpoint delegates entirely to repository, no inline DB code
+  - Verified via Swagger: 200 with correct shape, flood_reports array present
+
+## Deferred Items (add to existing Deferred section)
+- _check_gauge_thresholds() uses select("*") — fix to explicit columns in Week 4 polish
+- GET /api/alerts/{alert_id} missing Pydantic response_model — add in Week 4 polish
+
+NEXT (resume here):
+- Week 3 Day 4: Recommended actions → map highlighting via Zustand
+  - Files: SituationPanel.jsx, mapStore.js, AssetMarkers.jsx

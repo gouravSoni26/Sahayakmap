@@ -359,7 +359,7 @@ async def _call_llm(analysis: dict) -> str | None:
                     "https://api.groq.com/openai/v1/chat/completions",
                     headers={"Authorization": f"Bearer {settings.groq_api_key}"},
                     json={
-                        "model": "llama-3.2-1b-preview",
+                        "model": "openai/gpt-oss-120b",
                         "messages": [
                             {"role": "system", "content": BRIEFING_SYSTEM_PROMPT},
                             {"role": "user", "content": json.dumps(analysis, default=str)},
