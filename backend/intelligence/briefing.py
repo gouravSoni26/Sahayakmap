@@ -15,6 +15,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import anthropic
+import httpx
 from fastapi import HTTPException
 
 from config import settings
@@ -299,10 +300,44 @@ async def _build_analysis(db) -> dict:
     }
 
 
+# ── Ollama prompt condenser ───────────────────────────────────────────────────
+
+def _condense_for_ollama(analysis: dict) -> str:
+    """
+    Build a <150-word prompt for Llama 1B.
+    Llama 1B ignores long system prompts — compress to key facts only.
+    Output must match BRIEFING_SYSTEM_PROMPT's JSON schema.
+    """
+    parts = [
+        "Generate a JSON situation briefing for a flood rescue commander in Odisha.",
+        f"Critical gauges: {', '.join(analysis['critical_gauges']) or 'none'}.",
+        f"Warning gauges: {', '.join(analysis['warning_gauges']) or 'none'}.",
+        f"Reports in last 6h: {analysis['total_reports']}.",
+        f"Silent districts: {', '.join(analysis['silent_districts']) or 'none'}.",
+        f"Available assets: {len(analysis['available_assets'])}.",
+    ]
+    if analysis.get("projections"):
+        proj = analysis["projections"][0]
+        parts.append(
+            f"Flood wave projected at {proj.get('station', '?')} in {proj.get('eta_hours', '?')}h."
+        )
+    parts.append(
+        'Return JSON: {"summary": "2-3 sentences", "critical_developments": [], '
+        '"key_risks": [], "recommended_actions": [], "data_gaps": [], "confidence_note": ""}.'
+    )
+    return " ".join(parts)
+
+
 # ── LLM call ─────────────────────────────────────────────────────────────────
 
 async def _call_llm(analysis: dict) -> str | None:
-    if settings.llm_provider == "anthropic" and settings.anthropic_api_key:
+    """
+    Try each LLM provider in order, falling through on failure.
+    Chain: Anthropic Claude → Groq → Ollama → return None (template fallback).
+    Not gated on LLM_PROVIDER — Groq and Ollama are automatic fallbacks.
+    """
+    # Branch 1: Anthropic Claude (primary)
+    if settings.anthropic_api_key:
         try:
             client = _get_anthropic_client()
             message = await client.messages.create(
@@ -313,11 +348,56 @@ async def _call_llm(analysis: dict) -> str | None:
             )
             return message.content[0].text  # pyright: ignore[reportAttributeAccessIssue]
         except Exception as e:
-            logger.error("Claude API call failed: %s", e)
+            logger.warning("Claude API call failed, trying next fallback: %s", e)
+
+    # Branch 2: Groq (Llama 3.2 via cloud — free tier, OpenAI-compatible)
+    if settings.groq_api_key:
+        logger.info("Using Groq fallback")
+        try:
+            async with httpx.AsyncClient(timeout=settings.llm_timeout_sec) as client:
+                resp = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                    json={
+                        "model": "llama-3.2-1b-preview",
+                        "messages": [
+                            {"role": "system", "content": BRIEFING_SYSTEM_PROMPT},
+                            {"role": "user", "content": json.dumps(analysis, default=str)},
+                        ],
+                        "temperature": 0.2,
+                        "max_tokens": settings.llm_max_tokens,
+                    },
+                )
+                resp.raise_for_status()
+                return resp.json()["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            logger.warning("Groq fallback failed, trying Ollama: %s", e)
+
+    # Branch 3: Ollama (local Llama 3.2 — offline, zero cost)
+    # Health-check first — skip silently if Ollama isn't running.
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as hc:
+            health = await hc.get(f"{settings.ollama_base_url}/api/tags")
+        if health.status_code == 200:
+            logger.info("Using Ollama fallback")
+            async with httpx.AsyncClient(timeout=settings.llm_timeout_sec) as client:
+                resp = await client.post(
+                    f"{settings.ollama_base_url}/api/generate",
+                    json={
+                        "model": settings.ollama_model,
+                        "prompt": _condense_for_ollama(analysis),
+                        "stream": False,
+                        "options": {"temperature": 0.2, "num_predict": 800},
+                    },
+                )
+                resp.raise_for_status()
+                return resp.json()["response"].strip()
+    except Exception as e:
+        logger.warning("Ollama fallback failed: %s", e)
 
     if not settings.llm_fallback_to_templates:
-        raise RuntimeError("LLM unavailable and llm_fallback_to_templates is disabled")
-    return None  # caller uses template
+        raise RuntimeError("All LLM providers failed and llm_fallback_to_templates is disabled")
+    return None  # caller uses _template_fallback()
 
 
 # ── Template fallback ─────────────────────────────────────────────────────────

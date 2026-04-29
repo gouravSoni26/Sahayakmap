@@ -1113,3 +1113,11 @@ Start with: "Read MASTERPLAN.md and scaffold the project structure for Week 1, s
 - UUID validation on asset_id path param
 - 404 on missing asset_id
 - Fixed update endpoints to return updated row via `.select()`
+
+### Apr 29, 2026 — Week 2 closed + LLM fallback chain
+
+- AssetMarkers.jsx: draggable markers with PATCH on dragend
+- DemoControls.jsx: scenario simulation panel, bottom-left
+- briefing.py: full fallback chain — Claude → Groq → Ollama → template
+- config.py: startup validation fixed, Groq-only deploys now work
+- Issue #18 resolved: Ollama URL config unblocked

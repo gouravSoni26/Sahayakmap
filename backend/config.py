@@ -51,6 +51,8 @@ class Settings(BaseSettings):
         return v
 
     def model_post_init(self, __context: object) -> None:
+        import logging as _logging
+
         missing = []
         if not self.supabase_url:
             missing.append("SUPABASE_URL")
@@ -58,12 +60,25 @@ class Settings(BaseSettings):
             missing.append("SUPABASE_ANON_KEY")
         if not self.supabase_service_key:
             missing.append("SUPABASE_SERVICE_KEY")
-        if not self.anthropic_api_key:
-            missing.append("ANTHROPIC_API_KEY")
         if missing:
             raise ValueError(
                 f"Missing required environment variables: {', '.join(missing)}. "
                 "Check your .env file."
+            )
+
+        # At least one cloud LLM must be configured — Ollama alone is not
+        # sufficient for deployed environments where localhost:11434 is unavailable.
+        if not self.anthropic_api_key and not self.groq_api_key:
+            raise ValueError(
+                "At least one LLM provider must be configured: set ANTHROPIC_API_KEY "
+                "or GROQ_API_KEY. Ollama is supported as a local fallback but requires "
+                "one cloud provider for deployed environments."
+            )
+
+        if not self.anthropic_api_key:
+            _logging.getLogger(__name__).warning(
+                "ANTHROPIC_API_KEY not set — Claude is unavailable. "
+                "Briefings will use Groq or Ollama fallback."
             )
 
     class Config:
