@@ -145,17 +145,33 @@ async def _apply_step(db: Client, step: dict) -> None:
             logger.error("Unexpected error updating asset id=%s: %s", asset.get("id"), exc)
             errors.append(f"asset update failed for id={asset.get('id')}: {exc}")
 
-    for alert in step.get("alerts", []):
-        row = dict(alert)
-        if "location" in row:
-            row["location"] = _as_ewkt(row["location"])
-        try:
-            result = db.table("alerts").insert(row).execute()
-            if not result.data:
-                errors.append(f"alert insert returned no data: {row.get('title', '')[:60]}")
-        except Exception as exc:
-            logger.error("Unexpected error inserting alert: %s", exc)
-            errors.append(f"alert insert failed: {exc}")
+    alerts_to_insert = step.get("alerts", [])
+    if alerts_to_insert:
+        existing_alerts = (
+            db.table("alerts")
+            .select("type, title")
+            .is_("acknowledged_at", "null")
+            .execute()
+            .data or []
+        )
+        existing_alert_keys = {(a["type"], a["title"]) for a in existing_alerts}
+
+        for alert in alerts_to_insert:
+            key = (alert.get("type"), alert.get("title"))
+            if key in existing_alert_keys:
+                continue
+            row = dict(alert)
+            if "location" in row:
+                row["location"] = _as_ewkt(row["location"])
+            try:
+                result = db.table("alerts").insert(row).execute()
+                if not result.data:
+                    errors.append(f"alert insert returned no data: {row.get('title', '')[:60]}")
+                else:
+                    existing_alert_keys.add(key)
+            except Exception as exc:
+                logger.error("Unexpected error inserting alert: %s", exc)
+                errors.append(f"alert insert failed: {exc}")
 
     if errors:
         raise HTTPException(status_code=500, detail={"step_errors": errors})
