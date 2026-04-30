@@ -44,6 +44,13 @@ const useMapStore = create((set) => ({
   minSeverity: 1,
   setMinSeverity: (s) => set({ minSeverity: s }),
 
+  // Recommended action highlights (triggered from situation panel)
+  highlightedAssetIds: [],
+  highlightedDistrict: null,
+  setHighlightedAssets: (ids) => set({ highlightedAssetIds: ids }),
+  setHighlightedDistrict: (district) => set({ highlightedDistrict: district }),
+  clearHighlights: () => set({ highlightedAssetIds: [], highlightedDistrict: null }),
+
   // Demo / simulation mode
   simulationMode: false,
   currentScenarioStep: 0,

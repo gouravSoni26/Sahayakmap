@@ -104,6 +104,66 @@ def _hash_analysis(analysis: dict) -> str:
     return hashlib.md5(serialized.encode()).hexdigest()
 
 
+def _strip_code_fences(text: str) -> str:
+    """Remove markdown code fences that Groq/some LLMs wrap JSON responses in."""
+    text = text.strip()
+    if text.startswith("```"):
+        # Drop the opening fence line (```json or ``` alone)
+        newline = text.find("\n")
+        text = text[newline + 1:] if newline != -1 else text[3:]
+        # Drop the closing fence
+        if text.endswith("```"):
+            text = text[:-3].rstrip()
+    return text
+
+
+def _repair_truncated_json(text: str) -> str:
+    """
+    Best-effort repair of a truncated JSON string.
+    Finds the last complete top-level value, closes any open array, and
+    closes the root object so json.loads has a fighting chance.
+    Only applied when the text does not already end with '}'.
+    """
+    text = text.rstrip()
+    if text.endswith("}"):
+        return text
+
+    logger.warning("Groq response appears truncated (does not end with '}') — attempting repair")
+
+    # Walk backwards to find the last complete key-value pair boundary
+    # i.e. the last '}' or '"]' that closes a value before the cut-off
+    for marker in ("}", "]"):
+        idx = text.rfind(marker)
+        if idx != -1:
+            truncated = text[: idx + 1]
+            # Count unmatched braces/brackets to decide what to close
+            opens = truncated.count("{") - truncated.count("}")
+            arr_opens = truncated.count("[") - truncated.count("]")
+            closing = "]" * max(arr_opens, 0) + "}" * max(opens, 0)
+            if closing:
+                repaired = truncated + "\n" + closing
+                logger.warning("Repaired truncated JSON by appending %r", closing)
+                return repaired
+            return truncated
+
+    return text  # nothing salvageable; let json.loads report the error
+
+
+def _normalize_llm_text(text: str) -> str:
+    """Replace typographic unicode characters that break json.loads."""
+    return (
+        text
+        .replace("\u2011", "-")   # non-breaking hyphen → hyphen
+        .replace("\u2013", "-")   # en-dash → hyphen
+        .replace("\u2014", "-")   # em-dash → hyphen
+        .replace("\u201c", '"')   # left double quote → "
+        .replace("\u201d", '"')   # right double quote → "
+        .replace("\u2018", "'")   # left single quote → '
+        .replace("\u2019", "'")   # right single quote → '
+        .replace("\u00a0", " ")   # non-breaking space → space
+    )
+
+
 def _compute_confidence(reports: list, silent_districts: list) -> float:
     """
     Weighted average of (base_confidence x freshness_factor) across all reports.
@@ -181,21 +241,45 @@ async def generate_situation_brief(force: bool = False) -> dict | None:
     if brief_text is None:
         brief_text = _template_fallback(analysis)
 
+    # Strip fences → normalize unicode → repair truncation → parse
+    cleaned_text = _strip_code_fences(brief_text) if isinstance(brief_text, str) else brief_text
+    cleaned_text = _normalize_llm_text(cleaned_text) if isinstance(cleaned_text, str) else cleaned_text
+    cleaned_text = _repair_truncated_json(cleaned_text) if isinstance(cleaned_text, str) else cleaned_text
     try:
-        brief_json = json.loads(brief_text) if isinstance(brief_text, str) else brief_text
-    except json.JSONDecodeError:
-        logger.warning("LLM returned non-JSON briefing, using as plain summary text")
-        brief_json = {"summary": brief_text, "key_risks": [], "recommended_actions": []}
+        brief_json = json.loads(cleaned_text) if isinstance(cleaned_text, str) else cleaned_text
+        logger.info(f"brief_json parsed OK, keys: {list(brief_json.keys())}")
+        # Guard: Groq occasionally double-encodes — json.loads returns a str, not a dict
+        if isinstance(brief_json, str):
+            logger.debug("LLM response was double-encoded JSON — parsing inner string")
+            brief_json = json.loads(brief_json)
+    except json.JSONDecodeError as e:
+        logger.warning(f"JSON parse failed at pos {e.pos}, line {e.lineno}, col {e.colno}: {e.msg}")
+        logger.warning(f"CONTEXT: {cleaned_text[max(0,e.pos-50):e.pos+50]!r}")
+        brief_json = {}
 
+    # Trace the parsed shape so mismatches are visible in logs
+    if isinstance(brief_json, dict):
+        logger.debug(
+            "brief_json parsed OK — keys=%s  summary[:80]=%r",
+            list(brief_json.keys()),
+            (brief_json.get("summary") or "")[:80],
+        )
+    else:
+        logger.warning("brief_json is not a dict after parse (type=%s) — falling back", type(brief_json).__name__)
+        brief_json = {}
+
+    # Map LLM fields → DB columns; fall back to raw text if summary is missing/empty
+    parsed_summary = brief_json.get("summary", "")
     record = {
         "region": REGION,
-        "summary_text": brief_json.get("summary", ""),
+        "summary_text": parsed_summary if parsed_summary else brief_text,
         "key_risks": brief_json.get("key_risks", []),
         "recommendations": brief_json.get("recommended_actions", []),
         "stale_sources": brief_json.get("data_gaps", []),
         "overall_confidence": analysis["overall_confidence"],
         "data_freshness": {**analysis["source_freshness"], "input_hash": input_hash},
     }
+    logger.debug("Inserting brief — summary_text[:80]=%r", record["summary_text"][:80])
     result = db.table("situation_briefs").insert(record).execute()
     logger.info("Situation brief generated and stored")
     return result.data[0] if result.data else None
@@ -365,11 +449,13 @@ async def _call_llm(analysis: dict) -> str | None:
                             {"role": "user", "content": json.dumps(analysis, default=str)},
                         ],
                         "temperature": 0.2,
-                        "max_tokens": settings.llm_max_tokens,
+                        "max_tokens": 2000,
                     },
                 )
                 resp.raise_for_status()
-                return resp.json()["choices"][0]["message"]["content"].strip()
+                groq_text = resp.json()["choices"][0]["message"]["content"].strip()
+                logger.warning(f"GROQ RAW RESPONSE FIRST 200 CHARS: {groq_text[:200]!r}")
+                return groq_text
         except Exception as e:
             logger.warning("Groq fallback failed, trying Ollama: %s", e)
 

@@ -1210,6 +1210,32 @@ NEXT (resume here):
   - Endpoint delegates entirely to repository, no inline DB code
   - Verified via Swagger: 200 with correct shape, flood_reports array present
 
+  ### Apr 30, 2026 — Week 3 Day 4 complete
+
+- mapStore.js: added highlighting state
+  - highlightedAssetIds: [], highlightedDistrict: null
+  - setHighlightedAssets(), setHighlightedDistrict(), clearHighlights()
+
+- SituationPanel.jsx: recommended actions → map highlighting
+  - parseBrief(): defensive JSON parse of summary_text (handles Groq raw string)
+  - Renders summary, critical_developments, recommended_actions with scroll
+  - resolveAssetIds(): matches action.assets_involved name strings → UUIDs via useAssets()
+  - onMouseEnter → setHighlightedAssets(resolved UUIDs); onMouseLeave → clearHighlights()
+
+- AssetMarkers.jsx: highlight rendering
+  - isHighlighted: UUID match OR name substring match fallback
+  - Highlighted markers: pulsing ring via @keyframes + zIndexOffset={1000}
+
+- briefing.py: Groq response parse pipeline fixed
+  - _strip_code_fences(): removes ```json fences
+  - _normalize_llm_text(): sanitizes unicode (smart quotes, non-breaking hyphen, em-dash)
+  - _repair_truncated_json(): closes unterminated JSON from token cutoff
+  - max_tokens increased to 2000 for Groq call
+  - Double-decode guard + non-dict guard added
+
+NEXT (resume here):
+- Week 3 Day 5-7: Integration test + Cyclone Fani scenario end-to-end
+
 ## Deferred Items (add to existing Deferred section)
 - _check_gauge_thresholds() uses select("*") — fix to explicit columns in Week 4 polish
 - GET /api/alerts/{alert_id} missing Pydantic response_model — add in Week 4 polish
