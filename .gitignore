@@ -71,3 +71,4 @@ generate_reports.py
 # Screenshots
 *.PNG
 *.png
+.gstack/

@@ -77,6 +77,8 @@ Knowledge graph at `graphify-out/`. For architecture/codebase questions, read `g
 - Fusion functions should be standalone — no class wrapping unless asked
 - Match existing enum and UUID patterns from alerts.py / assets.py
 - Never select("*") — always use explicit LIST_COLUMNS / UPDATE_COLUMNS
+- Integration tests use pytest_configure for server reachability check — 
+  one clear error at the gate, not per-test ConnectionRefusedError
 
 ## Deferred Items
 - Issue #18 (Ollama URL config) — do NOT touch until Week 3 intelligence layer
