@@ -1186,9 +1186,6 @@ NEXT (resume here):
   - UUID malformed → 422, not found → 404
   - Endpoint delegates entirely to repository, no inline DB code
 
-NEXT (resume here):
-- Week 3 Day 4: Recommended actions → map highlighting via Zustand
-  - Files: SituationPanel.jsx, mapStore.js, AssetMarkers.jsx
 
   ### Apr 29, 2026 — Week 3 Day 3 complete
 
@@ -1239,7 +1236,3 @@ NEXT (resume here):
 ## Deferred Items (add to existing Deferred section)
 - _check_gauge_thresholds() uses select("*") — fix to explicit columns in Week 4 polish
 - GET /api/alerts/{alert_id} missing Pydantic response_model — add in Week 4 polish
-
-NEXT (resume here):
-- Week 3 Day 4: Recommended actions → map highlighting via Zustand
-  - Files: SituationPanel.jsx, mapStore.js, AssetMarkers.jsx
