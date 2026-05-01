@@ -7,6 +7,7 @@ import AssetMarkers from './AssetMarkers'
 import CampMarkers from './CampMarkers'
 import RouteLayer from './RouteLayer'
 import FloodOverlay from './FloodOverlay'
+import FloodExtentLayer from './FloodExtentLayer'
 
 export default function FloodMap() {
   const layers = useMapStore((s) => s.layers)
@@ -29,6 +30,7 @@ export default function FloodMap() {
         <TileLayer {...TILE_LAYERS.dark} />
         <ZoomControl position="bottomright" />
 
+        <FloodExtentLayer />
         {layers.floodOverlay && data?.reports && (
           <FloodOverlay reports={data.reports} />
         )}

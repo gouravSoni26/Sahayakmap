@@ -12,9 +12,86 @@ Adjacency data comes from the station_adjacency table (fetched by the caller)
 rather than a single upstream_station_id FK, supporting multi-tributary networks.
 """
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
+# ── Flood polygon projection ───────────────────────────────────────────────────
+# Radius formula: 2km base + 2km per metre above danger, capped at 15km.
+# Examples: +1m → 4km, +3m → 8km.
+_BASE_RADIUS_KM = 2.0
+_SCALE_KM_PER_M = 2.0
+_MAX_RADIUS_KM = 15.0
+
+# Cumulative upstream→downstream travel lag for Mahanadi/Brahmani chain.
+# travel_time_hrs ≈ river_distance_km / 5.0 (flood wave velocity for Mahanadi).
+# TIKARPARA→MUNDULI: ~100km / 5 = 20h by formula, but CWC obs give 6h — use observed.
+# MUNDULI→NARAJ: 2h observed, so cumulative from TIKARPARA = 8h.
+# Other stations are heads of independent sub-basins — lag = 0.
+_STATION_LAG_HRS: dict[str, float] = {
+    "TIKARPARA": 0.0,
+    "MUNDULI": 6.0,   # 6h downstream of TIKARPARA
+    "NARAJ": 8.0,     # cumulative: TIKARPARA→MUNDULI (6h) + MUNDULI→NARAJ (2h)
+}
+
+
+def compute_flood_polygons(danger_gauges: list[dict]) -> list[dict]:
+    """
+    For each gauge above danger level, compute a projected flood polygon
+    (GeoJSON circle approximation) centered on the gauge location.
+
+    danger_gauges: list of dicts, each with:
+        gauge_id, station_code, name, lat, lng, danger_level_m, water_level_m
+
+    Returns a list of GeoJSON Feature objects (Polygon geometry).
+    Properties per feature: gauge_id, station_code, name, water_level_m,
+    danger_level_m, radius_km, lag_hrs.
+    """
+    features = []
+    for g in danger_gauges:
+        excess_m = g["water_level_m"] - g["danger_level_m"]
+        if excess_m <= 0:
+            continue
+        radius_km = min(_BASE_RADIUS_KM + excess_m * _SCALE_KM_PER_M, _MAX_RADIUS_KM)
+        lag_hrs = _STATION_LAG_HRS.get(g["station_code"], 0.0)
+        features.append({
+            "type": "Feature",
+            "geometry": _circle_polygon(g["lat"], g["lng"], radius_km),
+            "properties": {
+                "gauge_id": g["gauge_id"],
+                "station_code": g["station_code"],
+                "name": g["name"],
+                "water_level_m": round(g["water_level_m"], 2),
+                "danger_level_m": round(g["danger_level_m"], 2),
+                "radius_km": round(radius_km, 2),
+                "lag_hrs": lag_hrs,
+            },
+        })
+    return features
+
+
+def _circle_polygon(lat: float, lng: float, radius_km: float, n_points: int = 32) -> dict:
+    """
+    Approximate a circle as a closed GeoJSON Polygon ring.
+
+    Degree conversion:
+      1° latitude  ≈ 111.32 km (constant)
+      1° longitude ≈ 111.32 km × cos(lat) — shrinks toward poles
+    """
+    d_lat = radius_km / 111.32
+    d_lng = radius_km / (111.32 * math.cos(math.radians(lat)))
+    coords = []
+    for i in range(n_points):
+        angle = 2 * math.pi * i / n_points
+        coords.append([
+            round(lng + d_lng * math.sin(angle), 6),
+            round(lat + d_lat * math.cos(angle), 6),
+        ])
+    coords.append(coords[0])  # close the ring
+    return {"type": "Polygon", "coordinates": [coords]}
+
+
+# ── Flood progression (upstream→downstream time-lag) ──────────────────────────
 
 def project_flood_progression(
     gauges: list[dict],

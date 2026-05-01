@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from api import health, map_data, alerts, briefing, assets, districts, scenarios
+from api import health, map_data, flood_map, alerts, briefing, assets, districts, scenarios
 from ingestion.scheduler import start_scheduler, stop_scheduler, get_scheduler_jobs
 
 logging.basicConfig(level=settings.log_level)
@@ -43,6 +43,7 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(map_data.router, prefix="/api", tags=["map"])
+app.include_router(flood_map.router, prefix="/api", tags=["map"])
 app.include_router(alerts.router, prefix="/api", tags=["alerts"])
 app.include_router(briefing.router, prefix="/api", tags=["briefing"])
 app.include_router(assets.router, prefix="/api", tags=["assets"])

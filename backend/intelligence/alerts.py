@@ -39,6 +39,7 @@ async def run_alert_checks() -> None:
     alert_pairs += await _check_silent_districts(db, now)
     alert_pairs += await _check_camps_at_risk(db, now)
     alert_pairs += await _check_bridge_submersion(db, now)
+    alert_pairs += await _check_camps_flood_projection(db, now)
 
     # Fetch existing unacknowledged alert (type, title) pairs to skip duplicates
     existing = (
@@ -296,6 +297,148 @@ async def _check_bridge_submersion(db, now: datetime) -> list[tuple[dict, list[s
             "location": bridge["location"],
             "expires_at": (now + timedelta(hours=2)).isoformat(),
         }, [r["id"] for r in nearby]))
+    return alert_pairs
+
+
+async def _check_camps_flood_projection(db, now: datetime) -> list[tuple[dict, list[str]]]:
+    """
+    Fire CAMP_AT_RISK when a relief camp falls inside or within 2km of a
+    projected flood polygon.
+
+    Flood polygon radius = 2km base + 2km per extra metre above danger (cap 15km),
+    matching the formula in projection.py / GET /api/map/flood-extent.
+
+    Secondary trigger: camp elevation < 10m within the polygon itself (no 2km buffer)
+    — low-elevation camps are at elevated risk from even marginal flooding.
+
+    Uses haversine proximity (same pattern as _check_camps_at_risk) rather than
+    PostGIS RPC, because the polygon center (gauge location) is the natural pivot
+    and the polygon is a circle — haversine ≡ ST_DWithin for this geometry.
+    """
+    camps = (
+        db.table("relief_camps")
+        .select("id,name,location,elevation_m,current_population")
+        .neq("status", "CLOSED")
+        .execute()
+        .data or []
+    )
+    if not camps:
+        return []
+
+    cwc_sources = (
+        db.table("data_sources").select("id").eq("type", "CWC_GAUGE").execute().data or []
+    )
+    cwc_source_ids = [s["id"] for s in cwc_sources]
+    if not cwc_source_ids:
+        return []
+
+    since = (now - timedelta(hours=3)).isoformat()
+    reports = (
+        db.table("flood_reports")
+        .select("source_id,water_level_m,raw_payload")
+        .in_("source_id", cwc_source_ids)
+        .gte("reported_at", since)
+        .order("reported_at", desc=True)
+        .execute()
+        .data or []
+    )
+    # level_map: station_code → latest reading (reports already DESC)
+    level_map: dict[str, float] = {}
+    for r in reports:
+        code = (r.get("raw_payload") or {}).get("station_code")
+        if code and code not in level_map and r.get("water_level_m"):
+            level_map[code] = r["water_level_m"]
+
+    gauges = (
+        db.table("gauge_stations")
+        .select("id,station_code,name,danger_level_m,location")
+        .execute()
+        .data or []
+    )
+
+    # Build above-danger gauges with parsed location + computed radius
+    danger_gauges: list[dict] = []
+    for g in gauges:
+        code = g.get("station_code")
+        level = level_map.get(code)
+        danger = g.get("danger_level_m")
+        if not level or not danger or level < danger:
+            continue
+        loc = g.get("location", "")
+        if not loc:
+            continue
+        try:
+            if isinstance(loc, dict) and loc.get("type") == "Point":
+                g_lng, g_lat = loc["coordinates"]
+            else:
+                coords = str(loc).replace("POINT(", "").replace(")", "").split()
+                g_lat, g_lng = float(coords[1]), float(coords[0])
+        except (IndexError, ValueError, AttributeError, KeyError):
+            continue
+        excess_m = level - danger
+        radius_km = min(2.0 + excess_m * 2.0, 15.0)
+        danger_gauges.append({
+            "station_code": code,
+            "name": g["name"],
+            "lat": g_lat,
+            "lng": g_lng,
+            "danger_level_m": danger,
+            "water_level_m": level,
+            "radius_km": radius_km,
+        })
+
+    if not danger_gauges:
+        return []
+
+    alert_pairs = []
+    for camp in camps:
+        loc = camp.get("location", "")
+        if not loc:
+            continue
+        try:
+            if isinstance(loc, dict) and loc.get("type") == "Point":
+                c_lng, c_lat = loc["coordinates"]
+            else:
+                coords = str(loc).replace("POINT(", "").replace(")", "").split()
+                c_lat, c_lng = float(coords[1]), float(coords[0])
+        except (IndexError, ValueError, AttributeError, KeyError):
+            continue
+
+        elevation = camp.get("elevation_m") or 999.0
+
+        triggering: dict | None = None
+        for dg in danger_gauges:
+            dist_km = haversine_km(c_lat, c_lng, dg["lat"], dg["lng"])
+            # Primary: inside polygon + 2km buffer
+            if dist_km <= dg["radius_km"] + 2.0:
+                triggering = dg
+                break
+            # Secondary: low-elevation camp inside polygon (no buffer)
+            if elevation < 10.0 and dist_km <= dg["radius_km"]:
+                triggering = dg
+                break
+
+        if not triggering:
+            continue
+
+        above_m = triggering["water_level_m"] - triggering["danger_level_m"]
+        alert_pairs.append(({
+            "type": "CAMP_AT_RISK",
+            "severity": 4,
+            "title": f"Relief camp {camp['name']} may be at risk",
+            "description": (
+                f"{camp['name']} is within the projected flood zone of {triggering['name']} gauge "
+                f"({triggering['water_level_m']:.2f}m — {above_m:.1f}m above danger). "
+                f"Projected flood radius: {triggering['radius_km']:.1f}km. "
+                f"Camp elevation: {elevation:.0f}m. "
+                f"Population at risk: {camp.get('current_population', 0)}."
+            ),
+            "recommended_action": (
+                "Assess evacuation urgency. Identify high-ground routes. "
+                "Coordinate with district collector for transport assets."
+            ),
+            "expires_at": (now + timedelta(hours=3)).isoformat(),
+        }, []))
     return alert_pairs
 
 

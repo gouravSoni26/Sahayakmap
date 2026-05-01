@@ -997,10 +997,42 @@ Every UI decision must pass this test: "Can Rajesh use this on a phone screen at
 - Scenario loader + ticker endpoints
 - Demo control bar in frontend
 
-**Day 3-4: Flood projection**
+**Day 3-4: Flood projection** ← THE DEMO-CRITICAL FEATURE
 - Simple upstream→downstream time-lag model
 - Flood extent projection (buffer gauge locations based on level + elevation)
 - Relief camp risk assessment (projected flood vs camp elevation)
+
+> **Implementation note (read this when you start Day 3-4):**
+>
+> This is the single most visually compelling feature. When the flood polygon expands
+> toward Erasama camp on the map and the CAMP_AT_RISK alert fires automatically —
+> that's the demo moment that lands.
+>
+> **The split:** Python does all detection. LLM only generates natural language.
+>
+> **Build order:**
+> 1. `intelligence/projection.py` — for each gauge above danger level, compute a
+>    projected flood polygon. Radius grows proportionally to how far above danger
+>    the reading is (e.g. +1m above danger → 3km radius, +3m → 8km radius).
+>    Use a hardcoded lag table for upstream→downstream timing
+>    (distance / ~5 km/hr flood wave velocity for Mahanadi).
+> 2. `GET /api/map/flood-extent` — new endpoint that queries danger-level gauges
+>    and returns projected polygons as GeoJSON.
+> 3. Add camp risk check to `run_alert_checks()` in `intelligence/alerts.py` —
+>    use PostGIS `ST_DWithin` to find camps inside or within 2km of the polygon.
+>    Camps below 10m elevation near a danger-level gauge = at risk.
+>    Auto-insert CAMP_AT_RISK alert with same (type, title) dedup guard already
+>    used elsewhere. The T+21h scenario seed becomes redundant once this is live.
+> 4. Frontend: render flood extent as a semi-transparent red/orange fill layer
+>    on the Leaflet map. Camp marker turns red + pulsing ring as polygon engulfs it.
+>
+> ~150-200 lines total across backend + frontend. PostGIS ST_DWithin pattern
+> already exists in the codebase — follow that.
+>
+> The LLM's role here: once Python fires the alert, Claude writes the
+> recommended_action — e.g. "Dispatch boats from Kendrapara to Erasama via
+> Devi River channel. ETA 2.5 hours." The facts come from Python; Claude
+> just phrases the action.
 
 **Day 5-7: Polish**
 - Mobile responsive layout
@@ -1256,8 +1288,46 @@ Week 3 complete. All deliverables done:
 - Situation panel with recommended actions → map highlighting
 - 9/9 integration tests green
 
+### May 1, 2026 — Week 4 Day 1-2 complete: Flood Projection + Camp Risk Auto-Alert
+
+- intelligence/projection.py: compute_flood_polygons() — radius = 2.0 + excess_m * 2.0,
+  capped at 15km. _circle_polygon() generates 32-vertex GeoJSON Polygon.
+  _STATION_LAG_HRS hardcoded lag table (TIKARPARA=0h, MUNDULI=6h, NARAJ=8h).
+
+- api/flood_map.py (renamed from map.py — Python built-in conflict):
+  MapRepository with 3 explicit-column methods.
+  GET /api/map/flood-extent — returns GeoJSON FeatureCollection.
+  _GAUGE_META fallback — works even when gauge_stations table is unseeded.
+  _parse_gauge_location() handles EWKB hex (Supabase) + WKT fallback.
+
+- intelligence/alerts.py: _check_camps_flood_projection() added —
+  haversine check per camp vs projected radius + 2km buffer.
+  Secondary trigger: elevation < 10m AND dist <= radius.
+  Same (type, title) dedup guard as _check_bridge_submersion().
+  Wired into run_alert_checks() after _check_bridge_submersion().
+
+- frontend/src/components/FloodExtentLayer.jsx (new):
+  Polls /api/map/flood-extent every 30s via React Query.
+  style={getStyle} fix — Leaflet expects StyleFunction not plain object.
+  key={data.generated_at} forces remount on data refresh.
+
+- frontend/src/components/FloodMap.jsx: FloodExtentLayer mounted before FloodOverlay.
+
+Verified end-to-end: Load Fani → tick to T+9h → orange-red polygon appears
+around Naraj gauge → CAMP_AT_RISK alert fires for Erasama School Camp.
+
+Known issues fixed during Day 1-2:
+- api/map.py → flood_map.py (Python built-in `map` conflict)
+- gauge_stations table empty — _GAUGE_META hardcoded fallback added
+- Two uvicorn processes on port 8000 — killed stale process
+- react-leaflet style prop expects function not object — fixed with getStyle()
+
+
 ## Deferred Items (add to existing Deferred section)
 - _check_gauge_thresholds() uses select("*") — fix to explicit columns in Week 4 polish
 - GET /api/alerts/{alert_id} missing Pydantic response_model — add in Week 4 polish
 - supabase-py: `gotrue` deprecation warning — run `pip install --upgrade supabase` in Week 4 polish
 - Pydantic: class-based `Config` deprecation — migrate any `class Config` blocks to `model_config = ConfigDict(...)` in Week 4 polish
+- AlertList.jsx: duplicate alert rows visible in UI panel (Erasama + Jenapur each appear twice).
+  DB dedup guard is correct — issue is in AlertList.jsx query or rendering logic.
+  Fix in Week 4 Day 3-4 polish pass.
