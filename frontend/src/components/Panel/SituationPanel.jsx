@@ -40,7 +40,7 @@ function parseBrief(brief) {
 }
 
 export default function SituationPanel() {
-  const { data, isLoading } = useBriefing()
+  const { data, isLoading, isError } = useBriefing()
   const { mutate: generate, isPending } = useGenerateBriefing()
   const brief = parseBrief(data?.brief)
   const { data: assetData } = useAssets()
@@ -64,6 +64,7 @@ export default function SituationPanel() {
       </div>
 
       {isLoading && <p className="text-xs text-slate-500 px-3 pb-3">Loading briefing…</p>}
+      {isError && <p className="text-xs text-red-400 px-3 pb-3">⚠ Situation brief unavailable</p>}
 
       {brief && (
         <div className="overflow-y-auto max-h-[40vh] min-h-0 px-3 pb-3 space-y-2">

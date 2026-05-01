@@ -6,13 +6,41 @@ import SeverityBadge from '../common/SeverityBadge'
 import useMapStore from '../../stores/mapStore'
 
 export default function AlertList() {
-  const { data, isLoading } = useAlerts({ minSeverity: 1 })
+  const { data, isLoading, isError } = useAlerts({ minSeverity: 1 })
   const { mutate: ack } = useAcknowledgeAlert()
   const setSelectedAlert = useMapStore((s) => s.setSelectedAlert)
-  const alerts = data?.alerts ?? []
   const [expandedId, setExpandedId] = useState(null)
 
-  if (isLoading) return <p className="p-3 text-xs text-slate-500">Loading alerts…</p>
+  if (isLoading) {
+    return (
+      <div className="divide-y divide-slate-700">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="p-3 animate-pulse">
+            <div className="h-3 w-14 bg-slate-700 rounded mb-2" />
+            <div className="h-4 w-full bg-slate-700 rounded mb-1" />
+            <div className="h-4 w-3/4 bg-slate-700 rounded" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <p className="p-3 text-xs text-red-400">
+        ⚠ Alert feed unavailable — check backend connection
+      </p>
+    )
+  }
+
+  // Dedup by id — API may return duplicates from scenario ticks; preserve sort order
+  const seen = new Set()
+  const alerts = (data?.alerts ?? []).filter((a) => {
+    if (seen.has(a.id)) return false
+    seen.add(a.id)
+    return true
+  })
+
   if (!alerts.length) return <p className="p-3 text-xs text-slate-500">No active alerts.</p>
 
   return (
@@ -39,10 +67,11 @@ export default function AlertList() {
                 {!alert.acknowledged && (
                   <button
                     onClick={(e) => { e.stopPropagation(); ack(alert.id) }}
-                    className="text-slate-500 hover:text-green-400"
+                    className="text-slate-500 hover:text-green-400 min-h-[44px] min-w-[44px] flex items-center justify-center"
                     title="Acknowledge"
                   >
                     <CheckCircle size={16} />
+                    <span className="sr-only">Acknowledge alert</span>
                   </button>
                 )}
                 <button

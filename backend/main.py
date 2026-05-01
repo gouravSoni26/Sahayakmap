@@ -1,8 +1,11 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from config import settings
 from api import health, map_data, flood_map, alerts, briefing, assets, districts, scenarios
@@ -40,6 +43,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        return await http_exception_handler(request, exc)
+    logger.error("Unhandled exception: %s", exc, exc_info=True)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(map_data.router, prefix="/api", tags=["map"])

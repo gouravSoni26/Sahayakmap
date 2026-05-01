@@ -51,6 +51,11 @@ const useMapStore = create((set) => ({
   setHighlightedDistrict: (district) => set({ highlightedDistrict: district }),
   clearHighlights: () => set({ highlightedAssetIds: [], highlightedDistrict: null }),
 
+  // Mobile bottom drawer
+  drawerOpen: false,
+  toggleDrawer: () => set((state) => ({ drawerOpen: !state.drawerOpen })),
+  setDrawerOpen: (open) => set({ drawerOpen: open }),
+
   // Demo / simulation mode
   simulationMode: false,
   currentScenarioStep: 0,
