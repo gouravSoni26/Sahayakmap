@@ -262,14 +262,14 @@ async def acknowledge_alert(
     # ── Step 3: Optimistic lock — only update if still unacknowledged ─────────
     # The .is_("acknowledged_at", "null") condition ensures that if another request
     # acknowledged between Step 1 and Step 3, this update will match 0 rows.
-    # .select() is required — without it Supabase returns no data and result.data
-    # is always empty, making the success check below always raise 409.
+    # NOTE: .select() must NOT be chained after filter methods — postgrest-py's
+    # SyncFilterRequestBuilder does not expose .select(). The update() call
+    # already returns the updated rows in result.data by default.
     result = (
         db.table("alerts")
         .update(update_payload)
         .eq("id", str(alert_id))
         .is_("acknowledged_at", "null")
-        .select("id,acknowledged_at")  # type: ignore
         .execute()
     )
 
