@@ -128,6 +128,18 @@ async def list_alerts(
     query = build_query(base_query, filters)
     data = query.execute().data or []
 
+    # Deduplicate by (type, title) — scenario ticks can accumulate many records
+    # with identical type+title but different UUIDs. Keep the most recent per pair
+    # (data is already sorted generated_at desc so first occurrence wins).
+    seen_keys: set[tuple] = set()
+    deduped: list = []
+    for row in data:
+        key = (row.get("type"), row.get("title"))
+        if key not in seen_keys:
+            seen_keys.add(key)
+            deduped.append(row)
+    data = deduped
+
     # Composite cursor: ISO_timestamp|uuid — prevents skipping rows with identical timestamps.
     next_cursor = (
         f"{data[-1]['generated_at']}|{data[-1]['id']}"
