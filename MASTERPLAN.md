@@ -1292,6 +1292,26 @@ Known issues fixed during Day 1-2:
 - Two uvicorn processes on port 8000 — killed stale process
 - react-leaflet style prop expects function not object — fixed with getStyle()
 
+### May 1, 2026 — Week 4 Day 3-4 complete
+
+- AlertList.jsx: dedup by UUID (Set-based, frontend); server-side dedup by
+  (type, title) added to list_alerts after runtime QA found scenario creating
+  fresh UUIDs on each run — 55 DB rows → 4 unique alerts
+- AlertList.jsx: 3-row animate-pulse skeleton on isLoading; red error banner
+  on isError; min-h-[44px] min-w-[44px] + sr-only on acknowledge button
+- SituationPanel.jsx: red error banner on isError
+- mapStore.js: drawerOpen, toggleDrawer(), setDrawerOpen() added
+- App.jsx: mobile bottom drawer (md:hidden, 60px collapsed / 70vh expanded,
+  transition-transform duration-300); desktop layout unchanged
+- backend/main.py: global @app.exception_handler(Exception) — delegates
+  HTTPException to FastAPI default, returns {"detail": "Internal server error"}
+  for everything else; fix: removed bad .select() chain from acknowledge
+  endpoint (postgrest-py SyncFilterRequestBuilder has no .select())
+- QA: 22/22 static checks green, 2 critical runtime bugs found and fixed,
+  health score 42 → 87
+
+NEXT (resume here):
+- Week 4 Day 5-7: Polish pass
 
 ## Deferred Items (add to existing Deferred section)
 - _check_gauge_thresholds() uses select("*") — fix to explicit columns in Week 4 polish
