@@ -1002,37 +1002,7 @@ Every UI decision must pass this test: "Can Rajesh use this on a phone screen at
 - Flood extent projection (buffer gauge locations based on level + elevation)
 - Relief camp risk assessment (projected flood vs camp elevation)
 
-> **Implementation note (read this when you start Day 3-4):**
->
-> This is the single most visually compelling feature. When the flood polygon expands
-> toward Erasama camp on the map and the CAMP_AT_RISK alert fires automatically —
-> that's the demo moment that lands.
->
-> **The split:** Python does all detection. LLM only generates natural language.
->
-> **Build order:**
-> 1. `intelligence/projection.py` — for each gauge above danger level, compute a
->    projected flood polygon. Radius grows proportionally to how far above danger
->    the reading is (e.g. +1m above danger → 3km radius, +3m → 8km radius).
->    Use a hardcoded lag table for upstream→downstream timing
->    (distance / ~5 km/hr flood wave velocity for Mahanadi).
-> 2. `GET /api/map/flood-extent` — new endpoint that queries danger-level gauges
->    and returns projected polygons as GeoJSON.
-> 3. Add camp risk check to `run_alert_checks()` in `intelligence/alerts.py` —
->    use PostGIS `ST_DWithin` to find camps inside or within 2km of the polygon.
->    Camps below 10m elevation near a danger-level gauge = at risk.
->    Auto-insert CAMP_AT_RISK alert with same (type, title) dedup guard already
->    used elsewhere. The T+21h scenario seed becomes redundant once this is live.
-> 4. Frontend: render flood extent as a semi-transparent red/orange fill layer
->    on the Leaflet map. Camp marker turns red + pulsing ring as polygon engulfs it.
->
-> ~150-200 lines total across backend + frontend. PostGIS ST_DWithin pattern
-> already exists in the codebase — follow that.
->
-> The LLM's role here: once Python fires the alert, Claude writes the
-> recommended_action — e.g. "Dispatch boats from Kendrapara to Erasama via
-> Devi River channel. ETA 2.5 hours." The facts come from Python; Claude
-> just phrases the action.
+> Week 4 Day 1-2 complete — flood projection, flood-extent endpoint, camp risk auto-alert, FloodExtentLayer map overlay. Verified May 1 2026.
 
 **Day 5-7: Polish**
 - Mobile responsive layout
