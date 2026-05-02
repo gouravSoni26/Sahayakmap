@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { API_BASE } from '../../utils/constants'
+import { API_BASE, REFRESH } from '../../utils/constants'
 
 async function fetchScenarioState() {
   const res = await fetch(`${API_BASE}/api/scenario/state`)
@@ -15,7 +15,9 @@ export default function DemoControls() {
   const { data: state, refetch } = useQuery({
     queryKey: ['scenario-state'],
     queryFn: fetchScenarioState,
-    refetchInterval: 5000,
+    refetchInterval: REFRESH.demoState,
+    staleTime: REFRESH.demoState - 5_000,
+    refetchOnWindowFocus: false,
   })
 
   async function handleLoad() {

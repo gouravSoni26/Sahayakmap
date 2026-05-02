@@ -18,6 +18,8 @@ export function useBriefing() {
     queryKey: ['briefing'],
     queryFn: fetchBriefing,
     refetchInterval: REFRESH.briefing,
+    staleTime: REFRESH.briefing - 5_000,
+    refetchOnWindowFocus: false,
   })
 }
 

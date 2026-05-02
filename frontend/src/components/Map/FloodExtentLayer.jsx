@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { GeoJSON } from 'react-leaflet'
-import { API_BASE } from '../../utils/constants'
+import { API_BASE, REFRESH } from '../../utils/constants'
 
 const POLYGON_STYLE = {
   fillColor: '#ff4500',
@@ -32,7 +32,9 @@ export default function FloodExtentLayer() {
   const { data, isError, error } = useQuery({
     queryKey: ['floodExtent'],
     queryFn: fetchFloodExtent,
-    refetchInterval: 30_000,
+    refetchInterval: REFRESH.floodExtent,
+    staleTime: REFRESH.floodExtent - 5_000,
+    refetchOnWindowFocus: false,
   })
 
   if (isError || !data?.features?.length) return null

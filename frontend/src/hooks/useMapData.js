@@ -17,5 +17,7 @@ export function useMapData() {
     queryKey: ['mapData', hoursFilter, minSeverity],
     queryFn: () => fetchMapData({ hours: hoursFilter, minSeverity }),
     refetchInterval: REFRESH.mapData,
+    staleTime: REFRESH.mapData - 5_000,
+    refetchOnWindowFocus: false,
   })
 }

@@ -55,4 +55,6 @@ export const REFRESH = {
   alerts: 30_000,
   briefing: 5 * 60_000,
   assets: 60_000,
+  floodExtent: 30_000,
+  demoState: 10_000,
 }

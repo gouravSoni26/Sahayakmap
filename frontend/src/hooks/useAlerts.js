@@ -22,6 +22,8 @@ export function useAlerts(options = {}) {
     queryKey: ['alerts', options],
     queryFn: () => fetchAlerts(options),
     refetchInterval: REFRESH.alerts,
+    staleTime: REFRESH.alerts - 5_000,
+    refetchOnWindowFocus: false,
   })
 }
 

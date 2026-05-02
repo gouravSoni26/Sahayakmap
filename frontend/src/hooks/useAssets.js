@@ -32,6 +32,8 @@ export function useAssets() {
     queryKey: ['assets'],
     queryFn: fetchAssets,
     refetchInterval: REFRESH.assets,
+    staleTime: REFRESH.assets - 5_000,
+    refetchOnWindowFocus: false,
   })
 }
 
