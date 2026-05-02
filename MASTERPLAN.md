@@ -1310,8 +1310,19 @@ Known issues fixed during Day 1-2:
 - QA: 22/22 static checks green, 2 critical runtime bugs found and fixed,
   health score 42 → 87
 
+### May 2, 2026 — Week 4 Day 5-7 complete: Performance + Deployment
+
+- frontend: reduced API calls — staleTime + refetchOnWindowFocus:false on all
+  useQuery hooks; DemoControls 5s → 10s; FloodExtentLayer moved to REFRESH constant
+- Railway: FastAPI backend deployed at sahayakmap-production.up.railway.app
+  All 6 scheduler jobs running. Root directory: backend/
+- Vercel: React frontend deployed at sahayakmap-psi.vercel.app
+  VITE_API_BASE_URL points to Railway backend
+- CORS updated to allow sahayakmap-psi.vercel.app
+- Full end-to-end verified: map markers, 4 alerts, situation brief, freshness panel all live
+
 NEXT (resume here):
-- Week 4 Day 5-7: Polish pass
+- Week 5: README + demo video + final submission (May 14-16)
 
 ## Deferred Items (add to existing Deferred section)
 - _check_gauge_thresholds() uses select("*") — fix to explicit columns in Week 4 polish
