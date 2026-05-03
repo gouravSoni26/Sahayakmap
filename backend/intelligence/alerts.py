@@ -24,6 +24,12 @@ CAMP_RISK_PROXIMITY_KM = 15
 # Need 3+ reports to confirm bridge submersion — avoids false alerts from single tweet.
 BRIDGE_CORROBORATION_COUNT = 3
 
+# Column lists — never select("*")
+_GAUGE_REPORT_COLS = "id,water_level_m,raw_payload"
+_GAUGE_STATION_COLS = "station_code,name,danger_level_m"
+_CAMP_COLS = "id,name,location,current_population"
+_SPATIAL_REPORT_COLS = "id,location"
+
 
 async def run_alert_checks() -> None:
     """
@@ -41,11 +47,11 @@ async def run_alert_checks() -> None:
     alert_pairs += await _check_bridge_submersion(db, now)
     alert_pairs += await _check_camps_flood_projection(db, now)
 
-    # Fetch existing unacknowledged alert (type, title) pairs to skip duplicates
+    # Fetch existing alert (type, title) pairs to skip duplicates — check both
+    # acknowledged and unacknowledged so re-acking doesn't re-generate the same alert.
     existing = (
         db.table("alerts")
-        .select("type, title")
-        .is_("acknowledged_at", "null")
+        .select("type,title")
         .execute()
         .data or []
     )
@@ -85,13 +91,13 @@ async def _check_gauge_thresholds(db, now: datetime) -> list[tuple[dict, list[st
 
     reports = (
         db.table("flood_reports")
-        .select("*")
+        .select(_GAUGE_REPORT_COLS)
         .in_("source_id", cwc_source_ids)
         .gte("reported_at", since)
         .execute()
         .data or []
     )
-    gauges = db.table("gauge_stations").select("*").execute().data or []
+    gauges = db.table("gauge_stations").select(_GAUGE_STATION_COLS).execute().data or []
     gauge_map = {g["station_code"]: g for g in gauges}
 
     alert_pairs = []
@@ -146,11 +152,11 @@ async def _check_silent_districts(db, now: datetime) -> list[tuple[dict, list[st
 
 
 async def _check_camps_at_risk(db, now: datetime) -> list[tuple[dict, list[str]]]:
-    camps = db.table("relief_camps").select("*").neq("status", "CLOSED").execute().data or []
+    camps = db.table("relief_camps").select(_CAMP_COLS).neq("status", "CLOSED").execute().data or []
     since = (now - timedelta(hours=3)).isoformat()
     severe_reports = (
         db.table("flood_reports")
-        .select("*")
+        .select(_SPATIAL_REPORT_COLS)
         .gte("reported_at", since)
         .gte("severity", 3)
         .execute()
@@ -236,7 +242,7 @@ async def _check_bridge_submersion(db, now: datetime) -> list[tuple[dict, list[s
     # Batch-fetch corroboration reports (severity >= 3) for proximity checks
     severe_reports = (
         db.table("flood_reports")
-        .select("*")
+        .select(_SPATIAL_REPORT_COLS)
         .gte("reported_at", since)
         .gte("severity", 3)
         .execute()
