@@ -1,5 +1,6 @@
 import { useAssets } from '../../hooks/useAssets'
 import useMapStore from '../../stores/mapStore'
+import { formatAssetStatus } from '../../utils/formatters'
 
 const STATUS_STYLES = {
   AVAILABLE: 'bg-green-900/50 text-green-400 border-green-700',
@@ -39,7 +40,7 @@ export default function AssetPanel() {
               >
                 <span className="text-slate-200 truncate">{asset.name}</span>
                 <span className={`px-1.5 py-0.5 rounded border text-xs shrink-0 ml-2 ${STATUS_STYLES[asset.status] ?? ''}`}>
-                  {asset.status}
+                  {formatAssetStatus(asset.status)}
                 </span>
               </div>
             ))}

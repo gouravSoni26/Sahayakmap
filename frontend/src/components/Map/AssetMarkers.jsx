@@ -1,8 +1,12 @@
 import { Marker, Tooltip } from 'react-leaflet'
 import L from 'leaflet'
+import MarkerClusterGroup from 'react-leaflet-cluster'
+import 'react-leaflet-cluster/lib/assets/MarkerCluster.css'
+import 'react-leaflet-cluster/lib/assets/MarkerCluster.Default.css'
 import { useAssets, useUpdateAssetPosition } from '../../hooks/useAssets'
 import { parseLocation } from '../../utils/constants'
 import useMapStore from '../../stores/mapStore'
+import { formatAssetStatus } from '../../utils/formatters'
 
 const STATUS_COLORS = {
   AVAILABLE: '#22c55e',
@@ -34,7 +38,9 @@ export default function AssetMarkers() {
   const assets = data?.assets ?? []
   const hasHighlights = highlightedAssetIds.length > 0
 
-  return assets.map((asset) => {
+  return (
+    <MarkerClusterGroup chunkedLoading maxClusterRadius={60}>
+    {assets.map((asset) => {
     const pos = parseLocation(asset.location)
     if (!pos) return null
     const [lat, lng] = pos
@@ -62,9 +68,11 @@ export default function AssetMarkers() {
       >
         <Tooltip>
           <strong>{asset.name}</strong> ({asset.type})<br />
-          Status: {asset.status}
+          Status: {formatAssetStatus(asset.status)}
         </Tooltip>
       </Marker>
     )
-  })
+  })}
+    </MarkerClusterGroup>
+  )
 }

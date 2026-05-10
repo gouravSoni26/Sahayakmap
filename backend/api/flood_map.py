@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Explicit column lists — never select("*") (CLAUDE.md rule)
-_GAUGE_COLUMNS = "id,station_code,name,danger_level_m,location"
+_GAUGE_COLUMNS = "id,station_code,name,river_name,warning_level_m,danger_level_m,location"
 _CWC_REPORT_COLUMNS = "id,source_id,water_level_m,reported_at,raw_payload"
 
 # Hardcoded gauge metadata — mirrors seed/gauge_stations.py.

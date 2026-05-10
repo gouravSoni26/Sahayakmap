@@ -8,6 +8,8 @@ import CampMarkers from './CampMarkers'
 import RouteLayer from './RouteLayer'
 import FloodOverlay from './FloodOverlay'
 import FloodExtentLayer from './FloodExtentLayer'
+import MapLegend from './MapLegend'
+import DistrictLayer from './DistrictLayer'
 
 export default function FloodMap() {
   const layers = useMapStore((s) => s.layers)
@@ -21,6 +23,10 @@ export default function FloodMap() {
         </div>
       )}
 
+      <div className="absolute bottom-52 left-3 z-[1000]">
+        <MapLegend />
+      </div>
+
       <MapContainer
         center={MAP_CENTER}
         zoom={MAP_DEFAULT_ZOOM}
@@ -28,6 +34,7 @@ export default function FloodMap() {
         className="w-full h-full"
       >
         <TileLayer {...TILE_LAYERS.dark} />
+        <DistrictLayer />
         <ZoomControl position="bottomright" />
 
         <FloodExtentLayer />

@@ -48,10 +48,19 @@ export default function GaugeMarkers({ gauges, reports }) {
         <Popup>
           <div className="text-sm">
             <p className="font-bold">{gauge.name}</p>
-            <p>{gauge.river_name} — {gauge.basin} basin</p>
-            {level && <p>Level: <strong>{level.toFixed(2)}m</strong></p>}
-            <p>Warning: {gauge.warning_level_m}m | Danger: {gauge.danger_level_m}m</p>
-            {latest && <p className="text-xs text-gray-500">Trend: {latest.water_level_trend}</p>}
+            {gauge.river_name && <p className="text-gray-600">{gauge.river_name}</p>}
+            <p>Level: <strong>{level ? `${level.toFixed(2)}m` : 'No data'}</strong></p>
+            {level && (
+              <p className="font-semibold">
+                {level >= gauge.danger_level_m
+                  ? '🔴 Above danger'
+                  : level >= gauge.warning_level_m
+                  ? '🟡 Above warning'
+                  : '🟢 Normal'}
+              </p>
+            )}
+            <p className="text-xs text-gray-500">Warning: {gauge.warning_level_m}m | Danger: {gauge.danger_level_m}m</p>
+            {latest?.water_level_trend && <p className="text-xs text-gray-500">Trend: {latest.water_level_trend}</p>}
           </div>
         </Popup>
       </CircleMarker>
