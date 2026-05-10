@@ -1,12 +1,67 @@
-import { Marker, Tooltip } from 'react-leaflet'
+import { Marker, Tooltip, Circle, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import 'react-leaflet-cluster/lib/assets/MarkerCluster.css'
 import 'react-leaflet-cluster/lib/assets/MarkerCluster.Default.css'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { useAssets, useUpdateAssetPosition } from '../../hooks/useAssets'
 import { parseLocation } from '../../utils/constants'
 import useMapStore from '../../stores/mapStore'
 import { formatAssetStatus } from '../../utils/formatters'
+
+const MIN_CLUSTER_RADIUS = 2000 // metres — minimum coverage circle even for tightly packed assets
+
+function computeCoverageCircles(group) {
+  const layers = group._featureGroup?._layers ?? {}
+  return Object.values(layers)
+    .filter((layer) => typeof layer.getAllChildMarkers === 'function')
+    .map((cluster) => {
+      const children = cluster.getAllChildMarkers()
+      const lats = children.map((m) => m.getLatLng().lat)
+      const lngs = children.map((m) => m.getLatLng().lng)
+      const centerLat = lats.reduce((a, b) => a + b, 0) / lats.length
+      const centerLng = lngs.reduce((a, b) => a + b, 0) / lngs.length
+      const center = L.latLng(centerLat, centerLng)
+      const maxDist = children.reduce((max, m) => Math.max(max, center.distanceTo(m.getLatLng())), 0)
+      return {
+        id: cluster._leaflet_id,
+        center: [centerLat, centerLng],
+        radius: Math.max(maxDist, MIN_CLUSTER_RADIUS),
+      }
+    })
+}
+
+const MIN_HIGHLIGHT_RADIUS = 8000 // metres — minimum circle for highlighted clusters
+
+function computeHighlightCircles(group, assets, highlightedAssetIds) {
+  if (!highlightedAssetIds.length || !group._featureGroup) return []
+  const layers = group._featureGroup._layers ?? {}
+  return Object.values(layers)
+    .filter((layer) => typeof layer.getAllChildMarkers === 'function')
+    .reduce((acc, cluster) => {
+      const children = cluster.getAllChildMarkers()
+      const hasHighlighted = children.some((child) => {
+        const id = child.options?.title
+        if (!id) return false
+        if (highlightedAssetIds.includes(id)) return true
+        const asset = assets.find((a) => a.id === id)
+        return asset && highlightedAssetIds.some((h) => asset.name.toLowerCase().includes(h.toLowerCase()))
+      })
+      if (!hasHighlighted) return acc
+      const lats = children.map((m) => m.getLatLng().lat)
+      const lngs = children.map((m) => m.getLatLng().lng)
+      const centerLat = lats.reduce((a, b) => a + b, 0) / lats.length
+      const centerLng = lngs.reduce((a, b) => a + b, 0) / lngs.length
+      const center = L.latLng(centerLat, centerLng)
+      const maxDist = children.reduce((max, m) => Math.max(max, center.distanceTo(m.getLatLng())), 0)
+      acc.push({
+        id: cluster._leaflet_id,
+        center: [centerLat, centerLng],
+        radius: Math.max(maxDist, MIN_HIGHLIGHT_RADIUS),
+      })
+      return acc
+    }, [])
+}
 
 const STATUS_COLORS = {
   AVAILABLE: '#22c55e',
@@ -34,12 +89,99 @@ export default function AssetMarkers() {
   const { data } = useAssets()
   const setSelectedAsset    = useMapStore((s) => s.setSelectedAsset)
   const highlightedAssetIds = useMapStore((s) => s.highlightedAssetIds)
+  const flyToOnHighlight    = useMapStore((s) => s.flyToOnHighlight)
+  const resetFlyTo          = useMapStore((s) => s.resetFlyTo)
   const { mutate: updatePosition } = useUpdateAssetPosition()
   const assets = data?.assets ?? []
   const hasHighlights = highlightedAssetIds.length > 0
 
+  const map = useMap()
+  const clusterRef = useRef(null)
+  const [coverageCircles, setCoverageCircles] = useState([])
+  const [highlightCircles, setHighlightCircles] = useState([])
+
+  // Stable refs so handleAnimationEnd (empty deps) always sees latest values
+  const assetsRef = useRef(assets)
+  const highlightedRef = useRef(highlightedAssetIds)
+  useEffect(() => { assetsRef.current = assets }, [assets])
+  useEffect(() => { highlightedRef.current = highlightedAssetIds }, [highlightedAssetIds])
+
+  const handleAnimationEnd = useCallback(() => {
+    const group = clusterRef.current
+    if (!group) return
+    setCoverageCircles(computeCoverageCircles(group))
+    setHighlightCircles(computeHighlightCircles(group, assetsRef.current, highlightedRef.current))
+  }, [])
+
+  // Recompute highlight circles immediately when highlighted IDs change (no map event needed)
+  // Also flies the map to the first matched cluster, or to the asset itself if unclustered.
+  useEffect(() => {
+    const group = clusterRef.current
+    if (!group) return
+    const circles = computeHighlightCircles(group, assets, highlightedAssetIds)
+    setHighlightCircles(circles)
+    if (!highlightedAssetIds.length || !flyToOnHighlight) return
+    if (circles.length > 0) {
+      map.setView(circles[0].center, 11)
+    } else {
+      // Asset is unclustered at current zoom — jump to the asset's own position
+      const target = assets.find((a) =>
+        highlightedAssetIds.includes(a.id) ||
+        highlightedAssetIds.some((h) => a.name.toLowerCase().includes(h.toLowerCase()))
+      )
+      if (target) {
+        const pos = parseLocation(target.location)
+        if (pos) map.setView(pos, 11)
+      }
+    }
+    resetFlyTo()
+  }, [highlightedAssetIds, assets, flyToOnHighlight])
+
   return (
-    <MarkerClusterGroup chunkedLoading maxClusterRadius={60} spiderfyOnMaxZoom spiderfyOnEveryZoom>
+    <>
+      {highlightCircles.map(({ id, center, radius }) => (
+        <Circle
+          key={`hl-${id}`}
+          center={center}
+          radius={radius}
+          interactive={false}
+          pathOptions={{
+            color: '#3b82f6',
+            fillColor: '#3b82f6',
+            fillOpacity: 0.08,
+            opacity: 0.7,
+            weight: 2,
+            dashArray: '6 4',
+          }}
+        />
+      ))}
+      {coverageCircles.map(({ id, center, radius }) => (
+        <Circle
+          key={id}
+          center={center}
+          radius={radius}
+          interactive={false}
+          pathOptions={{
+            color: '#3b82f6',
+            fillColor: '#3b82f6',
+            fillOpacity: 0.08,
+            opacity: 0.4,
+            weight: 1.5,
+          }}
+        />
+      ))}
+    <MarkerClusterGroup
+      ref={clusterRef}
+      chunkedLoading
+      maxClusterRadius={60}
+      spiderfyOnMaxZoom
+      spiderfyOnEveryZoom
+      eventHandlers={{
+        animationend: handleAnimationEnd,
+        zoomend: handleAnimationEnd,
+        moveend: handleAnimationEnd,
+      }}
+    >
     {assets.map((asset) => {
     const pos = parseLocation(asset.location)
     if (!pos) return null
@@ -62,6 +204,7 @@ export default function AssetMarkers() {
         key={asset.id}
         position={[lat, lng]}
         icon={makeIcon(asset, isHighlighted)}
+        title={asset.id}
         draggable={true}
         zIndexOffset={isHighlighted ? 1000 : 0}
         eventHandlers={{ click: () => setSelectedAsset(asset), dragend: handleDragEnd }}
@@ -74,5 +217,6 @@ export default function AssetMarkers() {
     )
   })}
     </MarkerClusterGroup>
+    </>
   )
 }

@@ -101,7 +101,7 @@ export default function SituationPanel() {
                     }}
                     onMouseLeave={clearHighlights}
                     onClick={() => {
-                      setHighlightedAssets(resolveAssetIds(action.assets_involved, allAssets))
+                      setHighlightedAssets(resolveAssetIds(action.assets_involved, allAssets), { fly: true })
                       setHighlightedDistrict(action.affected_district ?? null)
                     }}
                   >

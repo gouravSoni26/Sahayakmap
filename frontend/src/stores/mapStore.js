@@ -47,9 +47,11 @@ const useMapStore = create((set) => ({
   // Recommended action highlights (triggered from situation panel)
   highlightedAssetIds: [],
   highlightedDistrict: null,
-  setHighlightedAssets: (ids) => set({ highlightedAssetIds: ids }),
+  flyToOnHighlight: false,
+  setHighlightedAssets: (ids, { fly = false } = {}) => set({ highlightedAssetIds: ids, flyToOnHighlight: fly }),
   setHighlightedDistrict: (district) => set({ highlightedDistrict: district }),
-  clearHighlights: () => set({ highlightedAssetIds: [], highlightedDistrict: null }),
+  resetFlyTo: () => set({ flyToOnHighlight: false }),
+  clearHighlights: () => set({ highlightedAssetIds: [], highlightedDistrict: null, flyToOnHighlight: false }),
 
   // Mobile bottom drawer
   drawerOpen: false,
