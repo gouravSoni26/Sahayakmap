@@ -39,7 +39,7 @@ export default function AssetMarkers() {
   const hasHighlights = highlightedAssetIds.length > 0
 
   return (
-    <MarkerClusterGroup chunkedLoading maxClusterRadius={60}>
+    <MarkerClusterGroup chunkedLoading maxClusterRadius={60} spiderfyOnMaxZoom spiderfyOnEveryZoom>
     {assets.map((asset) => {
     const pos = parseLocation(asset.location)
     if (!pos) return null
