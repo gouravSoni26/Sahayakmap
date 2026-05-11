@@ -13,6 +13,7 @@ async function fetchAlerts({ minSeverity = 1, unacknowledgedOnly = false, distri
 
 async function acknowledgeAlert(alertId) {
   const res = await fetch(`${API_BASE}/api/alerts/${alertId}/ack`, { method: 'PUT' })
+  if (res.status === 409) return  // already acknowledged — guard response, not an error
   if (!res.ok) throw new Error('Failed to acknowledge alert')
   return res.json()
 }
@@ -31,6 +32,27 @@ export function useAcknowledgeAlert() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: acknowledgeAlert,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
+    onMutate: async (alertId) => {
+      await queryClient.cancelQueries({ queryKey: ['alerts'] })
+      const previous = queryClient.getQueriesData({ queryKey: ['alerts'] })
+      queryClient.setQueriesData({ queryKey: ['alerts'] }, (old) => {
+        if (!old?.alerts) return old
+        return {
+          ...old,
+          alerts: old.alerts.map((a) =>
+            a.id === alertId
+              ? { ...a, acknowledged_at: new Date().toISOString(), acknowledged: true }
+              : a
+          ),
+        }
+      })
+      return { previous }
+    },
+    onError: (_err, _alertId, context) => {
+      context?.previous?.forEach(([queryKey, data]) => {
+        queryClient.setQueryData(queryKey, data)
+      })
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   })
 }

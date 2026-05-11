@@ -118,14 +118,14 @@ export default function AssetMarkers() {
   useEffect(() => {
     const group = clusterRef.current
     if (!group) return
-    const circles = computeHighlightCircles(group, assets, highlightedAssetIds)
+    const circles = computeHighlightCircles(group, assetsRef.current, highlightedAssetIds)
     setHighlightCircles(circles)
     if (!highlightedAssetIds.length || !flyToOnHighlight) return
     if (circles.length > 0) {
       map.setView(circles[0].center, 11)
     } else {
       // Asset is unclustered at current zoom — jump to the asset's own position
-      const target = assets.find((a) =>
+      const target = assetsRef.current.find((a) =>
         highlightedAssetIds.includes(a.id) ||
         highlightedAssetIds.some((h) => a.name.toLowerCase().includes(h.toLowerCase()))
       )
@@ -135,7 +135,7 @@ export default function AssetMarkers() {
       }
     }
     resetFlyTo()
-  }, [highlightedAssetIds, assets, flyToOnHighlight])
+  }, [highlightedAssetIds, flyToOnHighlight])
 
   return (
     <>

@@ -1,4 +1,5 @@
-import { RefreshCw, AlertTriangle, TrendingUp } from 'lucide-react'
+import { useState } from 'react'
+import { RefreshCw, AlertTriangle, TrendingUp, CheckCircle } from 'lucide-react'
 import { useBriefing, useGenerateBriefing } from '../../hooks/useBriefing'
 import { useAssets } from '../../hooks/useAssets'
 import { formatDistanceToNow } from 'date-fns'
@@ -48,6 +49,15 @@ export default function SituationPanel() {
   const setHighlightedAssets   = useMapStore((s) => s.setHighlightedAssets)
   const setHighlightedDistrict = useMapStore((s) => s.setHighlightedDistrict)
   const clearHighlights        = useMapStore((s) => s.clearHighlights)
+  const [acknowledgedIds, setAcknowledgedIds] = useState(new Set())
+
+  function toggleAcknowledge(key) {
+    setAcknowledgedIds((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
 
   return (
     <div className="flex flex-col border-b border-slate-700 shrink-0 max-h-[60vh]">
@@ -89,37 +99,52 @@ export default function SituationPanel() {
               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
                 Recommended Actions
               </span>
-              {(brief.recommendations ?? brief.recommended_actions).map((action, i) => {
-                const priorityStyle = PRIORITY_STYLES[action.priority] ?? PRIORITY_STYLES.LOW
-                return (
-                  <div
-                    key={i}
-                    className="flex flex-col gap-1 text-xs bg-blue-900/40 border border-blue-700 rounded p-2 cursor-pointer hover:bg-blue-800/50 transition-colors"
-                    onMouseEnter={() => {
-                      setHighlightedAssets(resolveAssetIds(action.assets_involved, allAssets))
-                      setHighlightedDistrict(action.affected_district ?? null)
-                    }}
-                    onMouseLeave={clearHighlights}
-                    onClick={() => {
-                      setHighlightedAssets(resolveAssetIds(action.assets_involved, allAssets), { fly: true })
-                      setHighlightedDistrict(action.affected_district ?? null)
-                    }}
-                  >
-                    <div className="flex items-start gap-2">
-                      <TrendingUp size={12} className="text-blue-400 shrink-0 mt-0.5" />
-                      <span className="text-slate-200 flex-1">{action.action}</span>
-                      {action.priority && (
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${priorityStyle}`}>
-                          {action.priority}
-                        </span>
+              {(brief.recommendations ?? brief.recommended_actions)
+                .map((action, idx) => ({ action, idx }))
+                .sort((a, b) => {
+                  const aAck = acknowledgedIds.has(a.idx) ? 1 : 0
+                  const bAck = acknowledgedIds.has(b.idx) ? 1 : 0
+                  return aAck - bAck
+                })
+                .map(({ action, idx }) => {
+                  const isAcked = acknowledgedIds.has(idx)
+                  const priorityStyle = PRIORITY_STYLES[action.priority] ?? PRIORITY_STYLES.LOW
+                  return (
+                    <div
+                      key={idx}
+                      className={`flex flex-col gap-1 text-xs bg-blue-900/40 border border-blue-700 rounded p-2 cursor-pointer hover:bg-blue-800/50 transition-colors ${isAcked ? 'opacity-40' : 'opacity-100'}`}
+                      onMouseEnter={() => {
+                        setHighlightedAssets(resolveAssetIds(action.assets_involved, allAssets))
+                        setHighlightedDistrict(action.affected_district ?? null)
+                      }}
+                      onMouseLeave={clearHighlights}
+                      onClick={() => {
+                        setHighlightedAssets(resolveAssetIds(action.assets_involved, allAssets), { fly: true })
+                        setHighlightedDistrict(action.affected_district ?? null)
+                      }}
+                    >
+                      <div className="flex items-start gap-2">
+                        <TrendingUp size={12} className="text-blue-400 shrink-0 mt-0.5" />
+                        <span className={`text-slate-200 flex-1 ${isAcked ? 'line-through' : 'no-underline'}`}>{action.action}</span>
+                        {action.priority && (
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${priorityStyle}`}>
+                            {action.priority}
+                          </span>
+                        )}
+                        <button
+                          title={isAcked ? 'Mark unacknowledged' : 'Acknowledge'}
+                          className={`shrink-0 ml-1 ${isAcked ? 'text-green-400' : 'text-gray-500 hover:text-gray-300'}`}
+                          onClick={(e) => { e.stopPropagation(); toggleAcknowledge(idx) }}
+                        >
+                          <CheckCircle size={12} />
+                        </button>
+                      </div>
+                      {action.rationale && (
+                        <p className="text-slate-400 pl-5 leading-snug">{action.rationale}</p>
                       )}
                     </div>
-                    {action.rationale && (
-                      <p className="text-slate-400 pl-5 leading-snug">{action.rationale}</p>
-                    )}
-                  </div>
-                )
-              })}
+                  )
+                })}
             </div>
           )}
 
