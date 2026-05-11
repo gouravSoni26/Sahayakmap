@@ -10,6 +10,13 @@ export default function AlertList() {
   const { mutate: ack } = useAcknowledgeAlert()
   const setSelectedAlert = useMapStore((s) => s.setSelectedAlert)
   const [expandedId, setExpandedId] = useState(null)
+  const [ackedIds, setAckedIds] = useState(new Set())
+
+  function handleAck(e, alertId) {
+    e.stopPropagation()
+    setAckedIds((prev) => new Set([...prev, alertId]))
+    ack(alertId)
+  }
 
   if (isLoading) {
     return (
@@ -33,13 +40,20 @@ export default function AlertList() {
     )
   }
 
-  // Dedup by id — API may return duplicates from scenario ticks; preserve sort order
+  // Dedup by id — API may return duplicates from scenario ticks; acked alerts sort to bottom
   const seen = new Set()
-  const alerts = (data?.alerts ?? []).filter((a) => {
-    if (seen.has(a.id)) return false
-    seen.add(a.id)
-    return true
-  })
+  const alerts = (data?.alerts ?? [])
+    .filter((a) => {
+      if (seen.has(a.id)) return false
+      seen.add(a.id)
+      return true
+    })
+    .sort((a, b) => {
+      const aAcked = (ackedIds.has(a.id) || !!a.acknowledged_at) ? 1 : 0
+      const bAcked = (ackedIds.has(b.id) || !!b.acknowledged_at) ? 1 : 0
+      if (aAcked !== bAcked) return aAcked - bAcked
+      return b.severity - a.severity
+    })
 
   if (!alerts.length) return <p className="p-3 text-xs text-slate-500">No active alerts.</p>
 
@@ -47,10 +61,11 @@ export default function AlertList() {
     <div className="divide-y divide-slate-700">
       {alerts.map((alert) => {
         const isExpanded = expandedId === alert.id
+        const isAcked = ackedIds.has(alert.id) || !!alert.acknowledged_at
         return (
           <div
             key={alert.id}
-            className={`p-3 transition-colors ${alert.acknowledged ? 'opacity-50' : ''}`}
+            className={`p-3 transition-colors ${isAcked ? 'opacity-40' : ''}`}
           >
             {/* Collapsed header */}
             <div className="flex items-start justify-between gap-2">
@@ -61,19 +76,17 @@ export default function AlertList() {
                 <div className="flex items-center gap-2 mb-1">
                   <SeverityBadge severity={alert.severity} />
                 </div>
-                <p className="text-sm font-medium text-white leading-tight">{alert.title}</p>
+                <p className={`text-sm font-medium text-white leading-tight ${isAcked ? 'line-through' : ''}`}>{alert.title}</p>
               </div>
               <div className="flex items-center gap-1 shrink-0 mt-0.5">
-                {!alert.acknowledged && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); ack(alert.id) }}
-                    className="text-slate-500 hover:text-green-400 min-h-[44px] min-w-[44px] flex items-center justify-center"
-                    title="Acknowledge"
-                  >
-                    <CheckCircle size={16} />
-                    <span className="sr-only">Acknowledge alert</span>
-                  </button>
-                )}
+                <button
+                  onClick={(e) => handleAck(e, alert.id)}
+                  className={`shrink-0 ${isAcked ? 'text-green-400' : 'text-slate-500 hover:text-green-400'}`}
+                  title={isAcked ? 'Acknowledged' : 'Acknowledge'}
+                >
+                  <CheckCircle size={12} />
+                  <span className="sr-only">{isAcked ? 'Acknowledged' : 'Acknowledge alert'}</span>
+                </button>
                 <button
                   onClick={() => setExpandedId(isExpanded ? null : alert.id)}
                   className="text-slate-500 hover:text-slate-300"

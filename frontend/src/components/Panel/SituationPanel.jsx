@@ -100,18 +100,22 @@ export default function SituationPanel() {
                 Recommended Actions
               </span>
               {(brief.recommendations ?? brief.recommended_actions)
-                .map((action, idx) => ({ action, idx }))
+                .map((action) => {
+                const _text = typeof action === 'string' ? action : (action.action ?? action.text ?? '')
+                return { action, key: _text.trim().slice(0, 40) }
+              })
                 .sort((a, b) => {
-                  const aAck = acknowledgedIds.has(a.idx) ? 1 : 0
-                  const bAck = acknowledgedIds.has(b.idx) ? 1 : 0
+                  const aAck = acknowledgedIds.has(a.key) ? 1 : 0
+                  const bAck = acknowledgedIds.has(b.key) ? 1 : 0
                   return aAck - bAck
                 })
-                .map(({ action, idx }) => {
-                  const isAcked = acknowledgedIds.has(idx)
+                .map(({ action, key }) => {
+                  const actionText = typeof action === 'string' ? action : (action.action ?? action.text ?? '')
+                  const isAcked = acknowledgedIds.has(key)
                   const priorityStyle = PRIORITY_STYLES[action.priority] ?? PRIORITY_STYLES.LOW
                   return (
                     <div
-                      key={idx}
+                      key={key}
                       className={`flex flex-col gap-1 text-xs bg-blue-900/40 border border-blue-700 rounded p-2 cursor-pointer hover:bg-blue-800/50 transition-colors ${isAcked ? 'opacity-40' : 'opacity-100'}`}
                       onMouseEnter={() => {
                         setHighlightedAssets(resolveAssetIds(action.assets_involved, allAssets))
@@ -125,7 +129,7 @@ export default function SituationPanel() {
                     >
                       <div className="flex items-start gap-2">
                         <TrendingUp size={12} className="text-blue-400 shrink-0 mt-0.5" />
-                        <span className={`text-slate-200 flex-1 ${isAcked ? 'line-through' : 'no-underline'}`}>{action.action}</span>
+                        <span className={`text-slate-200 flex-1 min-w-0 ${isAcked ? 'line-through' : 'no-underline'}`}>{actionText}</span>
                         {action.priority && (
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${priorityStyle}`}>
                             {action.priority}
@@ -134,7 +138,7 @@ export default function SituationPanel() {
                         <button
                           title={isAcked ? 'Mark unacknowledged' : 'Acknowledge'}
                           className={`shrink-0 ml-1 ${isAcked ? 'text-green-400' : 'text-gray-500 hover:text-gray-300'}`}
-                          onClick={(e) => { e.stopPropagation(); toggleAcknowledge(idx) }}
+                          onClick={(e) => { e.stopPropagation(); toggleAcknowledge(key) }}
                         >
                           <CheckCircle size={12} />
                         </button>

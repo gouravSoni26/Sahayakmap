@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { API_BASE, REFRESH } from '../../utils/constants'
 
 async function fetchScenarioState() {
@@ -11,6 +11,7 @@ async function fetchScenarioState() {
 export default function DemoControls() {
   const [stepLabel, setStepLabel] = useState(null)
   const [loading, setLoading] = useState(false)
+  const queryClient = useQueryClient()
 
   const { data: state, refetch } = useQuery({
     queryKey: ['scenario-state'],
@@ -30,6 +31,10 @@ export default function DemoControls() {
       })
       setStepLabel(null)
       refetch()
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'alerts' })
+      fetch(`${API_BASE}/api/briefing/generate`, { method: 'POST' })
+        .then(() => queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'briefing' }))
+        .catch(() => {})
     } catch (err) {
       console.error('Failed to load scenario:', err)
     } finally {
@@ -49,6 +54,11 @@ export default function DemoControls() {
         const data = await res.json()
         setStepLabel(data.label ?? null)
         refetch()
+        queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'alerts' })
+        // Regenerate brief in background so it reflects new scenario data
+        fetch(`${API_BASE}/api/briefing/generate`, { method: 'POST' })
+          .then(() => queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'briefing' }))
+          .catch(() => {})
       }
     } catch (err) {
       console.error('Failed to tick scenario:', err)

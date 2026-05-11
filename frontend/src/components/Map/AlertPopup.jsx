@@ -27,7 +27,7 @@ export default function AlertPopup({ alert }) {
           {alert.recommended_action && (
             <p className="text-xs mt-1 text-blue-700">→ {alert.recommended_action}</p>
           )}
-          {!alert.acknowledged && (
+          {!alert.acknowledged_at && (
             <button
               onClick={() => ack(alert.id)}
               className="mt-2 text-xs bg-slate-700 text-white px-2 py-1 rounded hover:bg-slate-600"

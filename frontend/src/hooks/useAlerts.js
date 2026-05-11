@@ -41,7 +41,7 @@ export function useAcknowledgeAlert() {
           ...old,
           alerts: old.alerts.map((a) =>
             a.id === alertId
-              ? { ...a, acknowledged_at: new Date().toISOString(), acknowledged: true }
+              ? { ...a, acknowledged_at: new Date().toISOString() }
               : a
           ),
         }
