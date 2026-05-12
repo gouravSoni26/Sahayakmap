@@ -93,7 +93,8 @@ Rules:
 - Distinguish between what you KNOW from data and what you INFER
 - When data is stale, say so with the timestamp
 - If a district has gone silent, flag it as potentially critical
-- Never generate false precision — if confidence is low, say so"""
+- Never generate false precision — if confidence is low, say so
+- In assets_involved, use ONLY the exact asset names from the available_assets data provided — never invent or paraphrase asset names"""
 
 
 # ── Helper functions ──────────────────────────────────────────────────────────
@@ -199,6 +200,17 @@ def _build_source_freshness(reports: list) -> dict:
             freshness[src_type]["latest_at"] = reported_at
         freshness[src_type]["count"] += 1
     return freshness
+
+
+def _build_asset_summary(analysis: dict) -> str:
+    """Comma-separated list of available asset names for LLM context (capped at 12)."""
+    assets = analysis.get("available_assets", [])[:12]
+    if not assets:
+        return "none available"
+    return ", ".join(
+        f"{a['name']} ({a.get('type', '?')}, {a.get('status', '?')})"
+        for a in assets
+    )
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -398,7 +410,7 @@ def _condense_for_ollama(analysis: dict) -> str:
         f"Warning gauges: {', '.join(analysis['warning_gauges']) or 'none'}.",
         f"Reports in last 6h: {analysis['total_reports']}.",
         f"Silent districts: {', '.join(analysis['silent_districts']) or 'none'}.",
-        f"Available assets: {len(analysis['available_assets'])}.",
+        f"Available assets: {_build_asset_summary(analysis)}.",
     ]
     if analysis.get("projections"):
         proj = analysis["projections"][0]
@@ -420,6 +432,12 @@ async def _call_llm(analysis: dict) -> str | None:
     Chain: Anthropic Claude → Groq → Ollama → return None (template fallback).
     Not gated on LLM_PROVIDER — Groq and Ollama are automatic fallbacks.
     """
+    asset_summary = _build_asset_summary(analysis)
+    user_content = (
+        f"Available assets (use exact names in assets_involved):\n{asset_summary}\n\n"
+        + json.dumps(analysis, default=str)
+    )
+
     # Branch 1: Anthropic Claude (primary)
     if settings.anthropic_api_key:
         try:
@@ -428,7 +446,7 @@ async def _call_llm(analysis: dict) -> str | None:
                 model=settings.anthropic_model,
                 max_tokens=settings.llm_max_tokens,
                 system=BRIEFING_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": json.dumps(analysis, default=str)}],
+                messages=[{"role": "user", "content": user_content}],
             )
             return message.content[0].text  # pyright: ignore[reportAttributeAccessIssue]
         except Exception as e:
@@ -446,7 +464,7 @@ async def _call_llm(analysis: dict) -> str | None:
                         "model": "openai/gpt-oss-120b",
                         "messages": [
                             {"role": "system", "content": BRIEFING_SYSTEM_PROMPT},
-                            {"role": "user", "content": json.dumps(analysis, default=str)},
+                            {"role": "user", "content": user_content},
                         ],
                         "temperature": 0.2,
                         "max_tokens": 2000,
@@ -548,12 +566,17 @@ def _template_fallback(analysis: dict) -> str:
             "assets_involved": asset_names,
         })
 
+    _preposition_assets = [
+        a["name"] for a in analysis.get("available_assets", [])
+        if a.get("type") in ("BOAT", "RESCUE_TEAM") and a.get("status") == "AVAILABLE"
+    ][:MAX_TEMPLATE_ASSETS]
+
     for proj in analysis.get("projections", [])[:MAX_TEMPLATE_PROJECTIONS]:
         recommended_actions.append({
             "action": f"Pre-position assets near {proj.get('station', 'downstream station')}",
             "rationale": f"Flood wave projected to arrive in ~{proj.get('eta_hours', '?')} hours",
             "priority": 2,
-            "assets_involved": [],
+            "assets_involved": _preposition_assets,
         })
 
     if not parts:

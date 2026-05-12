@@ -20,6 +20,8 @@ const PRIORITY_STYLES = {
   LOW:      'bg-blue-800 text-blue-200',
 }
 
+const PRIORITY_LABEL = { 1: 'CRITICAL', 2: 'HIGH', 3: 'MEDIUM', 4: 'LOW' }
+
 function parseBrief(brief) {
   if (!brief) return null
   // Groq sometimes returns summary_text as a raw JSON string
@@ -44,6 +46,9 @@ export default function SituationPanel() {
   const { data, isLoading, isError } = useBriefing()
   const { mutate: generate, isPending } = useGenerateBriefing()
   const brief = parseBrief(data?.brief)
+  const recs = brief?.recommendations?.length
+    ? brief.recommendations
+    : (brief?.recommended_actions ?? [])
   const { data: assetData } = useAssets()
   const allAssets = assetData?.assets ?? []
   const setHighlightedAssets   = useMapStore((s) => s.setHighlightedAssets)
@@ -94,12 +99,12 @@ export default function SituationPanel() {
 
           {/* Recommended actions — click/hover to highlight assets on map */}
           {/* DB stores as "recommendations"; LLM JSON uses "recommended_actions" */}
-          {((brief.recommendations ?? brief.recommended_actions) ?? []).length > 0 && (
+          {recs.length > 0 && (
             <div className="space-y-1">
               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
                 Recommended Actions
               </span>
-              {(brief.recommendations ?? brief.recommended_actions)
+              {recs
                 .map((action) => {
                 const _text = typeof action === 'string' ? action : (action.action ?? action.text ?? '')
                 return { action, key: _text.trim().slice(0, 40) }
@@ -112,7 +117,8 @@ export default function SituationPanel() {
                 .map(({ action, key }) => {
                   const actionText = typeof action === 'string' ? action : (action.action ?? action.text ?? '')
                   const isAcked = acknowledgedIds.has(key)
-                  const priorityStyle = PRIORITY_STYLES[action.priority] ?? PRIORITY_STYLES.LOW
+                  const priorityLabel = PRIORITY_LABEL[action.priority] ?? (typeof action.priority === 'string' ? action.priority : 'UNKNOWN')
+                  const priorityStyle = PRIORITY_STYLES[priorityLabel] ?? PRIORITY_STYLES.LOW
                   return (
                     <div
                       key={key}
@@ -132,7 +138,7 @@ export default function SituationPanel() {
                         <span className={`text-slate-200 flex-1 min-w-0 ${isAcked ? 'line-through' : 'no-underline'}`}>{actionText}</span>
                         {action.priority && (
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${priorityStyle}`}>
-                            {action.priority}
+                            {priorityLabel}
                           </span>
                         )}
                         <button
