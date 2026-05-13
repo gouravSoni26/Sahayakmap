@@ -384,6 +384,15 @@ async def _build_analysis(db) -> dict:
     source_freshness = _build_source_freshness(reports)
     overall_confidence = _compute_confidence(reports, silent)
 
+    active_alerts = (
+        db.table("alerts")
+        .select("severity, type, title")
+        .is_("acknowledged_at", "null")
+        .gt("expires_at", datetime.now(timezone.utc).isoformat())
+        .execute()
+        .data
+    ) or []
+
     return {
         "critical_gauges": critical_gauges,
         "warning_gauges": warning_gauges,
@@ -393,6 +402,7 @@ async def _build_analysis(db) -> dict:
         "projections": projections,
         "overall_confidence": overall_confidence,
         "source_freshness": source_freshness,
+        "active_alerts": active_alerts,
     }
 
 
@@ -511,7 +521,19 @@ def _template_fallback(analysis: dict) -> str:
     Pure Python briefing when LLM is unavailable.
     Populates all 5 output fields from real analysis data.
     """
-    parts = []
+    critical_count = len([a for a in analysis.get("active_alerts", [])
+                          if a.get("severity", 0) >= 4])
+    warning_count  = len([a for a in analysis.get("active_alerts", [])
+                          if a.get("severity", 0) == 3])
+
+    if critical_count > 0:
+        opening = f"{critical_count} critical alert(s) active across the basin."
+    elif warning_count > 0:
+        opening = f"Warning conditions developing — {warning_count} district(s) flagged."
+    else:
+        opening = "All gauges reporting normal levels."
+
+    parts = [opening]
     critical_developments = []
     key_risks = []
     recommended_actions = []
