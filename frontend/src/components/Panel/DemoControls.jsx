@@ -8,9 +8,29 @@ async function fetchScenarioState() {
   return res.json()
 }
 
+async function generateBriefWithRetry(queryClient, setBriefPending) {
+  setBriefPending(true)
+  try {
+    const res = await fetch(`${API_BASE}/api/briefing/generate`, { method: 'POST' })
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get('Retry-After') ?? '30', 10)
+      await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000))
+      const retry = await fetch(`${API_BASE}/api/briefing/generate`, { method: 'POST' })
+      if (retry.ok) queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'briefing' })
+    } else if (res.ok) {
+      queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'briefing' })
+    }
+  } catch {
+    // network error — brief stays as-is
+  } finally {
+    setBriefPending(false)
+  }
+}
+
 export default function DemoControls() {
   const [stepLabel, setStepLabel] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [briefPending, setBriefPending] = useState(false)
   const queryClient = useQueryClient()
 
   const { data: state, refetch } = useQuery({
@@ -32,9 +52,7 @@ export default function DemoControls() {
       setStepLabel(null)
       refetch()
       queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'alerts' })
-      fetch(`${API_BASE}/api/briefing/generate`, { method: 'POST' })
-        .then(() => queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'briefing' }))
-        .catch(() => {})
+      generateBriefWithRetry(queryClient, setBriefPending)
     } catch (err) {
       console.error('Failed to load scenario:', err)
     } finally {
@@ -55,10 +73,7 @@ export default function DemoControls() {
         setStepLabel(data.label ?? null)
         refetch()
         queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'alerts' })
-        // Regenerate brief in background so it reflects new scenario data
-        fetch(`${API_BASE}/api/briefing/generate`, { method: 'POST' })
-          .then(() => queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'briefing' }))
-          .catch(() => {})
+        generateBriefWithRetry(queryClient, setBriefPending)
       }
     } catch (err) {
       console.error('Failed to tick scenario:', err)
@@ -105,6 +120,10 @@ export default function DemoControls() {
           Next Step →
         </button>
       </div>
+
+      {briefPending && (
+        <p className="text-yellow-400 text-center animate-pulse">Brief updating...</p>
+      )}
 
       {isComplete && (
         <p className="text-green-400 text-center">Scenario complete</p>
